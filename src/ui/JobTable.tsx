@@ -25,6 +25,8 @@ interface Props {
   onSetMark: (code: string, mark: MarkStatus) => void;
   onEditScore: (code: string, field: 'incomeScore' | 'netScore', value: number) => void;
   onEditApplicants: (code: string, value: number | null) => void;
+  /** 逐岗位 AI 收入分析：点击某行按钮打开该岗位的分析对话框（F-07，Q-D4 修订） */
+  onAiScan: (code: string) => void;
 }
 
 const MARK_BTNS: Array<{ v: MarkStatus; label: string }> = [
@@ -45,6 +47,10 @@ export function JobTable(props: Props) {
     { key: 'ratio', name: '报录比', sortable: true },
     { key: 'total', name: '总分', sortable: true },
     { key: '_mark', name: `${props.roundName}标记`, sortable: false },
+    // AI 收入分析：仅初筛（第 0 轮）展示，位于「初筛标记」后一列（一个岗位一个岗位分析）
+    ...(props.round === 0
+      ? [{ key: '_ai' as CellKey, name: 'AI 收入分析', sortable: false }]
+      : []),
   ];
 
   const arrow = (key: CellKey) =>
@@ -93,6 +99,7 @@ interface RowProps {
   onSetMark: (code: string, mark: MarkStatus) => void;
   onEditScore: (code: string, field: 'incomeScore' | 'netScore', value: number) => void;
   onEditApplicants: (code: string, value: number | null) => void;
+  onAiScan: (code: string) => void;
 }
 
 const JobRow = memo(function JobRow({
@@ -104,6 +111,7 @@ const JobRow = memo(function JobRow({
   onSetMark,
   onEditScore,
   onEditApplicants,
+  onAiScan,
 }: RowProps) {
   const mark = job.marks[round] ?? 'pending';
   const isOpen = expanded.has(job.code);
@@ -160,6 +168,17 @@ const JobRow = memo(function JobRow({
         return <span className="total-cell">{totalDisplay(calcTotal(job))}</span>;
       case '_mark':
         return <MarksCell mark={mark} onSet={(m) => onSetMark(job.code, m)} />;
+      case '_ai':
+        return (
+          <button
+            type="button"
+            className="jp-btn ai-scan-btn"
+            title="用 AI 分析该岗位的收入并回填"
+            onClick={() => onAiScan(job.code)}
+          >
+            AI 分析
+          </button>
+        );
       default:
         return String((job as unknown as Record<string, unknown>)[key] ?? '') || '—';
     }

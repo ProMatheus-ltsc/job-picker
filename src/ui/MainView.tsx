@@ -4,7 +4,7 @@
  * 名单口径唯一出口 roundList（Q-D9）；三类空态（无匹配/空轮次/画像空态）复用 EmptyState
  */
 import { useMemo, useState } from 'react';
-import { ClipboardList, FileInput, RefreshCcw, Sparkles, Trash2, UserCog, Download } from 'lucide-react';
+import { ClipboardList, FileInput, RefreshCcw, Trash2, UserCog, Download } from 'lucide-react';
 import { Layout, EmptyState } from '@shared/core';
 import { useToast } from '@shared/core/hooks/useToast';
 import type { AiEntry, AppState, ApplyAiSummary, Filters, Job, MarkStatus, SortState } from '../types';
@@ -35,10 +35,16 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
   const [sort, setSort] = useState<SortState>({ key: 'total', dir: 'desc' });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [profileOpen, setProfileOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
+  const [aiCode, setAiCode] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
   const cur = Math.min(round, state.rounds.length - 1);
+
+  /** AI 收入分析目标岗位（逐岗位分析：按钮位于初筛每行的「初筛标记」后一列，Q-D4 修订） */
+  const aiTarget = useMemo(
+    () => (aiCode ? state.jobs.find((j) => j.code === aiCode) ?? null : null),
+    [state.jobs, aiCode],
+  );
 
   /* ---------- 名单口径（roundList 唯一出口，Q-D9） ---------- */
   const counts = useMemo(
@@ -176,10 +182,6 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
             <UserCog size={13} className="mr-1 inline align-[-2px]" />
             考生画像{profileOn ? '（生效中）' : ''}
           </button>
-          <button className="jp-btn" onClick={() => setAiOpen(true)}>
-            <Sparkles size={13} className="mr-1 inline align-[-2px]" />
-            AI 收入分析
-          </button>
           <button className="jp-btn" onClick={() => setExportOpen(true)}>
             <Download size={13} className="mr-1 inline align-[-2px]" />
             导出名单
@@ -270,6 +272,7 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
           onSetMark={handleSetMark}
           onEditScore={handleEditScore}
           onEditApplicants={handleEditApplicants}
+          onAiScan={setAiCode}
         />
       )}
 
@@ -282,7 +285,9 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
         onSave={handleSaveProfile}
         onClose={() => setProfileOpen(false)}
       />
-      <AiDialog open={aiOpen} onClose={() => setAiOpen(false)} jobs={state.jobs} onApply={handleAiApply} />
+      {aiTarget && (
+        <AiDialog open onClose={() => setAiCode(null)} jobs={[aiTarget]} onApply={handleAiApply} />
+      )}
       <ExportDialog
         open={exportOpen}
         onClose={() => setExportOpen(false)}
