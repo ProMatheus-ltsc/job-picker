@@ -131,6 +131,11 @@ tr.mark-promote td:first-child { box-shadow: inset 3px 0 0 var(--jp-green); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .total-cell { font-weight: 700; color: var(--jp-primary); }
 .code-cell { font-family: Consolas, Menlo, monospace; font-size: 12.5px; }
+.ai-col { position: sticky; right: 0; z-index: 1; }
+.job-table thead th.ai-col { background: #f1f5fb; box-shadow: -1px 0 0 0 var(--jp-border); }
+.job-table tbody td.ai-col { background: #fff; box-shadow: -1px 0 0 0 var(--jp-border); }
+.job-table tbody tr.job-row:hover td.ai-col { background: #f7faff; }
+.ai-scan-btn { white-space: nowrap; padding: 4px 10px; font-size: 12px; }
 .score-input { width: 62px; padding: 4px 6px; border: 1px solid var(--jp-border); border-radius: 5px; text-align: right; font-size: 13px; }
 .score-input:focus { outline: 2px solid #bcd0f5; border-color: var(--jp-primary); }
 .marks { display: inline-flex; gap: 4px; }

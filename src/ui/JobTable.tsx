@@ -65,7 +65,7 @@ export function JobTable(props: Props) {
               {cols.map((c) => (
                 <th
                   key={c.key}
-                  className={c.sortable ? 'sortable' : undefined}
+                  className={`${c.sortable ? 'sortable' : ''}${c.key === '_ai' ? ' ai-col' : ''}`}
                   aria-sort={sort.key === c.key ? (sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
                   onClick={c.sortable ? () => onSort(c.key as SortState['key']) : undefined}
                 >
@@ -192,7 +192,7 @@ const JobRow = memo(function JobRow({
         aria-expanded={isOpen}
       >
         {cols.map((c) => (
-          <td key={c.key} className={isNumericCell(c.key) ? 'num' : undefined}>
+          <td key={c.key} className={`${isNumericCell(c.key) ? 'num' : ''}${c.key === '_ai' ? ' ai-col' : ''}`}>
             {cell(c.key)}
           </td>
         ))}
