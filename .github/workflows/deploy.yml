@@ -23,11 +23,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # standard 模式：clone shared-core 到 checkout 目录父级并 checkout pin（可重现构建）
+      # 注意：git fetch origin <sha> 在 GitHub 会返回 "couldn't find remote ref"（对任意非引用 SHA 的 fetch 受限），
+      # 故改用 --branch main 浅克隆拉取默认分支，再 checkout 到 pin 的完整 commit（对象已在本地）。
+      # 若未来 pin 落后于 main，需改回完整 clone + fetch，避免同报错。
       - name: Clone shared-core (pin 971b3e6)
         run: |
-          git clone --depth 1 https://github.com/ProMatheus-ltsc/shared-core.git ../shared-core
-          git -C ../shared-core fetch --depth 1 origin 971b3e6
-          git -C ../shared-core checkout 971b3e6
+          git clone --depth 1 --branch main https://github.com/ProMatheus-ltsc/shared-core.git ../shared-core
+          git -C ../shared-core checkout 971b3e6999fc7fc77af16e6af52775ad3fbaa628
 
       - uses: actions/setup-node@v4
         with:
