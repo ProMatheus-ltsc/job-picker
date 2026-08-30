@@ -1,0 +1,234 @@
+@import "tailwindcss";
+/* 扫描项目外的 shared-core 源码（Tailwind v4 自动内容检测不越项目根） */
+@source "../shared-core/src";
+
+/* ===== 项目自有业务样式（demo 视觉基线迁移；响应式基线由 @shared/core/styles/responsive.css 承载） ===== */
+:root {
+  --jp-primary: #1a56db;
+  --jp-primary-d: #1548b5;
+  --jp-bg: #f4f6fa;
+  --jp-border: #e3e8f0;
+  --jp-text: #1f2937;
+  --jp-muted: #6b7280;
+  --jp-green: #059669;
+  --jp-green-bg: #d1fae5;
+  --jp-green-bd: #34d399;
+  --jp-red: #dc2626;
+  --jp-red-bg: #fee2e2;
+  --jp-red-bd: #f87171;
+  --jp-gray-bg: #e5e7eb;
+  --jp-amber: #b45309;
+  --jp-amber-bg: #fef3c7;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  background: var(--jp-bg);
+  color: var(--jp-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+button { font-family: inherit; }
+
+/* ===== 按钮 ===== */
+.jp-btn {
+  border: 1px solid var(--jp-border); background: #fff; color: var(--jp-text);
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: background .15s, border-color .15s;
+}
+.jp-btn:hover { background: #f3f6fb; border-color: #c6d2e3; }
+.jp-btn.primary { background: var(--jp-primary); border-color: var(--jp-primary); color: #fff; }
+.jp-btn.primary:hover { background: var(--jp-primary-d); }
+.jp-btn.danger { color: var(--jp-red); border-color: var(--jp-red-bd); }
+.jp-btn.danger:hover { background: var(--jp-red-bg); }
+.jp-btn.sm { padding: 3px 10px; font-size: 12px; }
+.jp-btn:disabled { opacity: .5; cursor: not-allowed; }
+.jp-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ===== 卡片 ===== */
+.jp-card { background: #fff; border: 1px solid var(--jp-border); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.jp-notice {
+  background: var(--jp-amber-bg); border: 1px solid #fcd34d; color: var(--jp-amber);
+  border-radius: 6px; padding: 8px 12px; font-size: 12.5px; margin: 12px 0;
+}
+.jp-step-flow { color: var(--jp-muted); font-size: 13px; margin: 0 0 14px; }
+.jp-step-flow b { color: var(--jp-text); }
+
+/* ===== 向导 ===== */
+.wiz-steps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.wiz-steps span { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--jp-gray-bg); color: #4b5563; }
+.wiz-steps span.on { background: var(--jp-primary); color: #fff; }
+.wiz-steps span.done { background: var(--jp-green-bg); color: #065f46; }
+.preview-scroll { overflow: auto; max-height: 300px; border: 1px solid var(--jp-border); border-radius: 6px; }
+.map-row {
+  display: grid; grid-template-columns: 170px minmax(180px, 220px) 1fr; gap: 10px;
+  align-items: center; padding: 7px 4px; border-bottom: 1px dashed var(--jp-border);
+}
+.map-row .fname { font-weight: 600; }
+.map-row .req { color: var(--jp-red); font-size: 12px; margin-left: 4px; }
+.map-row select, .fld select, .fld input {
+  padding: 6px 8px; border: 1px solid var(--jp-border); border-radius: 6px; font-size: 13px; background: #fff;
+}
+.map-row .sample { color: var(--jp-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-err { color: var(--jp-red); font-size: 12.5px; margin-top: 8px; }
+
+/* ===== 轮次 Tab ===== */
+.tabs-wrap { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; }
+.round-tab {
+  border: 1px solid var(--jp-border); background: #fff; border-radius: 8px 8px 0 0;
+  padding: 7px 14px; cursor: pointer; white-space: nowrap; font-size: 13px; color: var(--jp-muted);
+}
+.round-tab .cnt { background: var(--jp-gray-bg); border-radius: 999px; padding: 0 7px; font-size: 11px; margin-left: 5px; color: #4b5563; }
+.round-tab.on { color: var(--jp-primary); border-color: var(--jp-primary); font-weight: 700; }
+.round-tab.on .cnt { background: #e0eafd; color: var(--jp-primary); }
+.round-tab.add { border-style: dashed; color: var(--jp-muted); }
+
+/* ===== 统计条 ===== */
+.stats-wrap {
+  background: #fff; border: 1px solid var(--jp-border); border-radius: 0 8px 0 0;
+  padding: 8px 14px; font-size: 12.5px; color: var(--jp-muted);
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+}
+.stats-wrap b { color: var(--jp-text); }
+.st-pend { color: #4b5563; } .st-pro { color: var(--jp-green); } .st-eli { color: var(--jp-red); }
+.stats-profile b { color: var(--jp-primary); }
+
+/* ===== 筛选栏 ===== */
+.filters-wrap {
+  background: #fff; border: 1px solid var(--jp-border); border-top: none; border-radius: 0 0 8px 8px;
+  padding: 10px 14px; margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; align-items: end;
+}
+.fld label { display: block; font-size: 11.5px; color: var(--jp-muted); margin-bottom: 3px; }
+.fld input, .fld select { width: 100%; }
+.fld input:focus, .fld select:focus { outline: 2px solid #bcd0f5; border-color: var(--jp-primary); }
+.fld input.err { border-color: var(--jp-red); outline: 2px solid #f5c6c6; }
+.range2 { display: flex; gap: 6px; align-items: center; }
+.range2 input { min-width: 0; }
+.range2 span { color: var(--jp-muted); }
+.fld-err { color: var(--jp-red); font-size: 11.5px; margin-top: 3px; min-height: 14px; }
+.fld-kw { grid-column: span 2; }
+
+/* ===== 岗位表格（TableScroll 内） ===== */
+.job-table { border-collapse: collapse; width: 100%; min-width: 1060px; font-size: 13px; }
+.job-table thead th {
+  background: #f1f5fb; text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid var(--jp-border); white-space: nowrap; font-size: 12.5px; color: #374151;
+}
+.job-table th.sortable { cursor: pointer; user-select: none; }
+.job-table th.sortable:hover { background: #e4ebf7; }
+.job-table th .arr { font-size: 10px; margin-left: 2px; }
+.job-table tbody td { padding: 7px 10px; border-bottom: 1px solid #eef1f6; vertical-align: middle; }
+.job-table tbody tr.job-row { cursor: pointer; }
+.job-table tbody tr.job-row:hover { background: #f7faff; }
+tr.mark-eliminate { opacity: .55; }
+tr.mark-eliminate td:first-child { box-shadow: inset 3px 0 0 var(--jp-red); }
+tr.mark-promote td:first-child { box-shadow: inset 3px 0 0 var(--jp-green); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.total-cell { font-weight: 700; color: var(--jp-primary); }
+.code-cell { font-family: Consolas, Menlo, monospace; font-size: 12.5px; }
+.score-input { width: 62px; padding: 4px 6px; border: 1px solid var(--jp-border); border-radius: 5px; text-align: right; font-size: 13px; }
+.score-input:focus { outline: 2px solid #bcd0f5; border-color: var(--jp-primary); }
+.marks { display: inline-flex; gap: 4px; }
+.marks button {
+  font-size: 12px; padding: 2px 9px; border: 1px solid var(--jp-border); background: #fff;
+  border-radius: 5px; cursor: pointer; color: var(--jp-muted);
+}
+.marks button:hover { border-color: #c6d2e3; }
+.marks button.pending.on { background: var(--jp-gray-bg); color: #374151; border-color: #9ca3af; }
+.marks button.promote.on { background: var(--jp-green-bg); color: #065f46; border-color: var(--jp-green-bd); font-weight: 700; }
+.marks button.eliminate.on { background: var(--jp-red-bg); color: #991b1b; border-color: var(--jp-red-bd); font-weight: 700; }
+tr.row-detail { background: #fbfcff; }
+tr.row-detail > td { padding: 10px 16px; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 18px; }
+.detail-grid div { font-size: 12.5px; }
+.detail-grid b { color: var(--jp-muted); font-weight: 600; }
+.formula-line { margin-top: 8px; padding: 6px 10px; background: #eef4ff; border-radius: 6px; font-size: 12.5px; color: #1e3a8a; }
+.empty-round { padding: 40px 20px; text-align: center; color: var(--jp-muted); }
+.empty-round .jp-btn { margin-top: 10px; }
+
+/* ===== F-08 报名人数行内编辑 ===== */
+td.apply-cell { cursor: text; }
+td.apply-cell:hover { background: #f0f6ff; }
+.apply-input { width: 72px; padding: 3px 6px; border: 1px solid var(--jp-primary); border-radius: 5px; text-align: right; font-size: 13px; }
+.apply-input:focus { outline: 2px solid #bcd0f5; }
+td.apply-empty { background: var(--jp-amber-bg); color: var(--jp-amber); font-weight: 700; }
+/* 行内空值黄底提示（span 形态） */
+.apply-empty-val { background: var(--jp-amber-bg); color: var(--jp-amber); font-weight: 700; padding: 1px 7px; border-radius: 4px; }
+
+/* ===== V3 顶栏工具行 ===== */
+.mv-head { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.mv-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.mv-meta { font-size: 12.5px; color: var(--jp-muted); }
+.mv-meta b { color: var(--jp-text); }
+
+/* ===== 备注（F-02） ===== */
+.remark-badge {
+  display: inline-block; margin-left: 5px; font-size: 10.5px; line-height: 1.6; padding: 0 6px;
+  border-radius: 999px; background: #eef4ff; color: var(--jp-primary); border: 1px solid #c6d9ff;
+  cursor: help; vertical-align: 1px;
+}
+.remark-text { white-space: pre-line; }
+.remark-block { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--jp-border); border-radius: 8px; background: #f8fafd; }
+.remark-block .rb-title { font-weight: 700; font-size: 13px; }
+.remark-block .rb-hint { font-size: 12.5px; color: var(--jp-muted); margin: 4px 0 10px; }
+.remark-cols { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.remark-cols label {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; background: #fff;
+  border: 1px solid var(--jp-border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.remark-cols label:hover { border-color: #c6d2e3; }
+
+/* ===== 考生画像（F-11） ===== */
+.pf-row { margin: 0 0 16px; }
+.pf-row > b { display: block; font-size: 13.5px; margin-bottom: 8px; }
+.profile-degrees { display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-degrees label, .profile-regions label {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; background: #fff;
+  border: 1px solid var(--jp-border); border-radius: 999px; padding: 5px 14px; cursor: pointer;
+}
+.profile-degrees label:hover, .profile-regions label:hover { border-color: #c6d2e3; }
+.profile-regions {
+  display: flex; flex-wrap: wrap; gap: 8px; max-height: 190px; overflow: auto;
+  border: 1px solid var(--jp-border); border-radius: 8px; padding: 10px; background: #fff;
+}
+
+/* ===== 对话框（modal-clamp 视口钳制来自 responsive.css） ===== */
+.jp-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .45); z-index: 50;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.jp-dialog {
+  background: #fff; border: none; border-radius: 12px; padding: 0; max-width: 760px;
+  width: 100%; box-shadow: 0 20px 60px rgba(15, 23, 42, .35);
+  display: flex; flex-direction: column; max-height: min(82vh, 720px);
+}
+.jp-dialog .dlg-body { padding: 20px; overflow: auto; }
+.dlg-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+.dlg-sub { font-size: 12.5px; color: var(--jp-muted); margin: 0 0 14px; }
+.dlg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; justify-content: flex-end; }
+textarea {
+  width: 100%; min-height: 130px; border: 1px solid var(--jp-border); border-radius: 8px; padding: 10px;
+  font-family: Consolas, Menlo, monospace; font-size: 12.5px; resize: vertical; box-sizing: border-box;
+}
+textarea:focus { outline: 2px solid #bcd0f5; border-color: var(--jp-primary); }
+.dlg-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.dlg-tabs button {
+  border: 1px solid var(--jp-border); background: #fff; border-radius: 6px; padding: 5px 14px;
+  cursor: pointer; font-size: 13px; color: var(--jp-muted);
+}
+.dlg-tabs button.on { background: var(--jp-primary); color: #fff; border-color: var(--jp-primary); }
+.result-box { margin-top: 12px; font-size: 13px; }
+.result-box .ok { color: var(--jp-green); }
+.result-box .err { color: var(--jp-red); }
+.result-box ul { margin: 6px 0 0; padding-left: 20px; }
+.prompt-hint { font-size: 12.5px; color: var(--jp-muted); background: #f6f8fc; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+
+/* ===== 页脚公式说明（V7） ===== */
+.jp-footer { border-top: 1px solid var(--jp-border); background: #fff; padding: 14px 0; color: var(--jp-muted); font-size: 12.5px; margin-top: 20px; }
+.jp-footer summary { cursor: pointer; color: var(--jp-text); font-weight: 600; }
+.jp-footer ul { margin: 8px 0 0; padding-left: 20px; }
+
+/* ===== 欢迎页 ===== */
+.welcome-inner ul { margin: 6px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--jp-muted); }
