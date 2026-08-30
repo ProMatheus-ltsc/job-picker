@@ -12,7 +12,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   /** 校验通过后由父级执行 applyAiResults + 持久化，返回回填摘要 */
-  onApply: (entries: AiEntry[], invalidEntries: unknown[]) => ApplyAiSummary;
+  onApply: (entries: AiEntry[]) => ApplyAiSummary;
 }
 
 export function AiDialog({ open, onClose, onApply }: Props) {
@@ -20,11 +20,14 @@ export function AiDialog({ open, onClose, onApply }: Props) {
   const [tab, setTab] = useState<1 | 2>(1);
   const [text, setText] = useState('');
   const [summary, setSummary] = useState<ApplyAiSummary | null>(null);
+  /** 校验产生的无效条目（本地保存直接回显，避免从父级返回值重复携带，CR-001） */
+  const [invalidEntries, setInvalidEntries] = useState<unknown[]>([]);
 
   useEffect(() => {
     if (open) {
       setSummary(null);
       setText('');
+      setInvalidEntries([]);
     }
   }, [open]);
 
@@ -47,7 +50,8 @@ export function AiDialog({ open, onClose, onApply }: Props) {
       showToast('JSON 中没有有效条目（单位名称与收入均缺失）', 'error');
       return;
     }
-    const s = onApply(v.data.results, v.data.invalidEntries);
+    setInvalidEntries(v.data.invalidEntries);
+    const s = onApply(v.data.results);
     setSummary(s);
     showToast(`AI 回填完成：${s.updatedCount} 个岗位已更新`);
   };
@@ -123,7 +127,7 @@ export function AiDialog({ open, onClose, onApply }: Props) {
             <div className="result-box">
               <div className="ok">
                 回填完成：命中 {summary.unitCount} 个单位，更新 {summary.updatedCount} 个岗位
-                {summary.invalidEntries?.length ? `，忽略无效条目 ${summary.invalidEntries.length} 条` : ''}
+                {invalidEntries.length ? `，忽略无效条目 ${invalidEntries.length} 条` : ''}
               </div>
               {summary.matchedUnits.length > 0 && (
                 <ul>

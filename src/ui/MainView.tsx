@@ -122,11 +122,12 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
   };
 
   /** AI 回填：副本上应用得到摘要，再整体持久化（F-07 规则 6） */
-  const handleAiApply = (entries: AiEntry[], invalidEntries: unknown[]): ApplyAiSummary => {
-    const copy = state.jobs.map((j) => ({ ...j }));
+  const handleAiApply = (entries: AiEntry[]): ApplyAiSummary => {
+    // 不可变拷贝（含 marks），与 mutateJobs 模式一致（CR-002）
+    const copy = state.jobs.map((j) => ({ ...j, marks: [...j.marks] }));
     const summary = applyAiResults(copy, entries);
     updateState({ ...state, jobs: copy });
-    return { ...summary, invalidEntries };
+    return summary;
   };
 
   /* ---------- 统计条 ---------- */
