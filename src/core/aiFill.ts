@@ -8,9 +8,9 @@ import { matchUnit } from './aiMatch';
 
 export { matchUnit };
 
-/** 提示词模板（05 §5.1 完整固化，与 demo/PRD §3.7 一致） */
+/** 提示词模板（05 §5.1 完整固化，与 demo/PRD §3.7 一致；岗位清单由 buildAiPrompt 动态注入） */
 export const AI_PROMPT_TEMPLATE = `# 任务
-你是公共部门收入分析助手。请根据我提供的政府部门预算文件文本，估算该部门公务员的人均年收入，并严格按下方 JSON 结构返回。
+你是公共部门收入分析助手。请结合下方「岗位清单」列出的单位，根据我粘贴的部门预算文本，估算每个单位公务员的人均年收入，并严格按下方 JSON 结构返回。
 
 # 输入格式
 我会粘贴某部门年度预算的文本内容（通常包含：部门基本情况、人员编制数/实有人数、工资福利支出、对个人和家庭的补助、公用经费等）。
@@ -20,7 +20,7 @@ export const AI_PROMPT_TEMPLATE = `# 任务
 {
   "results": [
     {
-      "单位名称": "与预算文件一致的部门全称",
+      "单位名称": "与岗位清单一致的部门（单位）名称",
       "平均收入": 49.88,
       "到手收入": 45.08,
       "说明": "一句话估算依据"
@@ -28,10 +28,13 @@ export const AI_PROMPT_TEMPLATE = `# 任务
   ]
 }
 字段约定：
-- "单位名称"：字符串，与预算文件中的部门名称保持一致
+- "单位名称"：字符串，需与「岗位清单」中的招聘单位保持一致；同一单位仅输出一条
 - "平均收入"：数字，人均年度总收入（含工资、津贴补贴、公积金单位缴存等），单位：万元
 - "到手收入"：数字，人均年度到手收入（扣除五险一金个人部分与个人所得税），单位：万元
 - "说明"：字符串，简要给出估算方法
+
+# 岗位清单（以下单位需给出估算，一个单位一条记录）
+{JOBS}
 
 # 完整示例
 【示例输入】
@@ -42,6 +45,19 @@ export const AI_PROMPT_TEMPLATE = `# 任务
 
 # 待分析内容
 （在此粘贴预算 PDF 文本内容）`;
+
+/**
+ * F-07 生成带当前岗位清单的提示词：把 {JOBS} 占位替换为「岗位代码｜招聘单位｜招考职位」列表，
+ * 供 AiDialog 展示/一键复制；无岗位时占位为空提示
+ */
+export function buildAiPrompt(jobs: Job[]): string {
+  const list = jobs.length
+    ? jobs
+        .map((j) => `- ${j.unit}${j.title ? `｜${j.title}` : ''}`)
+        .join('\n')
+    : '（当前无岗位可分析）';
+  return AI_PROMPT_TEMPLATE.replace('{JOBS}', list);
+}
 
 /** JSON 解析错误的行列位置提示（demo jsonErrPos 迁移） */
 function jsonErrPos(text: string, e: unknown): string {

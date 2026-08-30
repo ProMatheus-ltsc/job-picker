@@ -5,23 +5,27 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@shared/core/hooks/useToast';
 import { DialogShell } from './DialogShell';
-import { AI_PROMPT_TEMPLATE, validateAiJson } from '../core/aiFill';
-import type { AiEntry, ApplyAiSummary } from '../types';
+import { buildAiPrompt, validateAiJson } from '../core/aiFill';
+import type { AiEntry, ApplyAiSummary, Job } from '../types';
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** 当前岗位列表，用于动态注入提示词的岗位清单 */
+  jobs: Job[];
   /** 校验通过后由父级执行 applyAiResults + 持久化，返回回填摘要 */
   onApply: (entries: AiEntry[]) => ApplyAiSummary;
 }
 
-export function AiDialog({ open, onClose, onApply }: Props) {
+export function AiDialog({ open, onClose, jobs, onApply }: Props) {
   const { showToast } = useToast();
   const [tab, setTab] = useState<1 | 2>(1);
   const [text, setText] = useState('');
   const [summary, setSummary] = useState<ApplyAiSummary | null>(null);
   /** 校验产生的无效条目（本地保存直接回显，避免从父级返回值重复携带，CR-001） */
   const [invalidEntries, setInvalidEntries] = useState<unknown[]>([]);
+  /** 展示/复制用：动态注入当前岗位清单的提示词 */
+  const prompt = buildAiPrompt(jobs);
 
   useEffect(() => {
     if (open) {
@@ -33,7 +37,7 @@ export function AiDialog({ open, onClose, onApply }: Props) {
 
   const copyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(AI_PROMPT_TEMPLATE);
+      await navigator.clipboard.writeText(prompt);
       showToast('提示词已复制，粘贴给 AI 即可');
     } catch {
       showToast('复制失败，请手动全选复制', 'error');
@@ -92,11 +96,12 @@ export function AiDialog({ open, onClose, onApply }: Props) {
       {tab === 1 && (
         <div>
           <div className="prompt-hint">
-            复制下方提示词 → 粘贴部门预算 PDF 文本发给 AI → 将 AI 返回的 JSON 切到「② JSON 回填」粘贴即可。
+            提示词已按当前岗位表自动注入「岗位清单」（共 <b>{jobs.length}</b> 个岗位：单位｜职位）。复制下方提示词
+            → 粘贴部门预算 PDF 文本发给 AI → 将 AI 返回的 JSON 切到「② JSON 回填」粘贴即可。
           </div>
           <textarea
             readOnly
-            value={AI_PROMPT_TEMPLATE}
+            value={prompt}
             rows={14}
             aria-label="AI 提示词模板"
             onFocus={(e) => e.currentTarget.select()}

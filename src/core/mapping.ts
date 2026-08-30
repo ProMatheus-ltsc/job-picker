@@ -3,7 +3,6 @@
  */
 import { FIELDS, num, type Job, type Mapping, type RawTable, type Result } from '../types';
 import { err, ok } from '../types';
-import { roundIncomeScore } from './scoring';
 
 /**
  * 同名精确相等或包含关系的源列自动预填（F-02 规则 2，demo 词表口径原样迁移）
@@ -24,7 +23,8 @@ export function autoSuggestMapping(columns: string[]): Mapping {
 /**
  * F-02 按映射生成岗位数组（demo 逻辑原样迁移，列名口径 → 索引口径）
  * - 数值字段 parseFloat（失败 → null）
- * - 打分列未映射/为空 → roundIncomeScore 自动生成（40 万 → 40 分）
+ * - 收入/收入打分/到手打分导入时恒为空（null）：由 F-07 AI 收入分析回填后填入（Q-D4），
+ *   导入阶段不读源收入列、不自动推导打分；收入为空时总分按`收入项=0`参与，报录比无效 →「—」
  * - remarkCols 按勾选拼接「列名: 内容」换行并入备注
  * - 岗位代码或招聘单位为空的行跳过并计入 skipped
  */
@@ -63,10 +63,12 @@ export function buildJobs(
       code,
       unit,
       title: cell(mapping.title),
-      avgIncome: numCell(mapping.avgIncome),
-      netIncome: numCell(mapping.netIncome),
-      incomeScore: numCell(mapping.incomeScore),
-      netScore: numCell(mapping.netScore),
+      // 收入/收入打分/到手收入/到手打分：导入时恒为空（null），不读源收入列、不自动推导打分，
+      // 由 F-07 AI 收入分析回填或手动编辑填入（Q-D4）
+      avgIncome: null,
+      netIncome: null,
+      incomeScore: null,
+      netScore: null,
       applicants: numCell(mapping.applicants),
       hires: numCell(mapping.hires),
       region: cell(mapping.region).trim(),
@@ -82,10 +84,6 @@ export function buildJobs(
         .join('\n'),
       marks: Array.from({ length: roundsLength }, () => 'pending' as const),
     };
-
-    // 打分默认规则：未映射/为空时按年收入万数四舍五入（F-02 规则 7）
-    if (job.incomeScore == null) job.incomeScore = roundIncomeScore(job.avgIncome);
-    if (job.netScore == null) job.netScore = roundIncomeScore(job.netIncome);
 
     // 重新映射同一数据时轮次标记按岗位代码保留（F-02 规则 8）
     if (prevMarksByCode) {

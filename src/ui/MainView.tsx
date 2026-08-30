@@ -282,7 +282,7 @@ export function MainView({ state, updateState, mutateJobs, onRemap, onReimport, 
         onSave={handleSaveProfile}
         onClose={() => setProfileOpen(false)}
       />
-      <AiDialog open={aiOpen} onClose={() => setAiOpen(false)} onApply={handleAiApply} />
+      <AiDialog open={aiOpen} onClose={() => setAiOpen(false)} jobs={state.jobs} onApply={handleAiApply} />
       <ExportDialog
         open={exportOpen}
         onClose={() => setExportOpen(false)}

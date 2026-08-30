@@ -287,9 +287,9 @@ function Step3Confirm({
 }) {
   const built = buildJobs(raw, mapping, remarkCols, roundsLength);
   const mapped = FIELDS.filter((f) => mapping[f.key] != null);
-  const autoScore: string[] = [];
-  if (mapping.incomeScore == null) autoScore.push('收入打分 = 平均收入万数（四舍五入）');
-  if (mapping.netScore == null) autoScore.push('到手收入打分 = 到手收入万数（四舍五入）');
+  const autoScore: string[] = [
+    '收入/到手收入/收入打分/到手收入打分导入时默认为空：需通过「AI 收入分析」回填或手动编辑填入（不读源收入列、不自动推导打分）',
+  ];
   const jobs = built.ok ? built.data.jobs : [];
 
   return (
@@ -332,7 +332,7 @@ function Step3Confirm({
         </table>
       </div>
       {autoScore.length > 0 && (
-        <div className="prompt-hint">未映射列的默认处理：{autoScore.join('；')}</div>
+        <div className="prompt-hint">导入说明：{autoScore[0]}</div>
       )}
       {remap && (
         <div className="jp-notice">
