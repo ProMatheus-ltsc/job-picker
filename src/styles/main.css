@@ -1,6 +1,9 @@
 @import "tailwindcss";
-/* 扫描项目外的 shared-core 源码（Tailwind v4 自动内容检测不越项目根） */
-@source "../shared-core/src";
+/* 扫描项目外的 shared-core 源码（Tailwind v4 自动内容检测不越项目根）：
+   shared-core 经 npm file:../shared-core（junction→根 shared-core）接入，
+   @source 用相对路径相对 main.css 所在目录解析不稳定，且 Tailwind 扫描器不跟随 junction，
+   故改为解析到真实 shared-core 的绝对源码目录，确保 Layout 等共享组件的断点类（lg:*）被采集 */
+@source "../../../shared-core/src";
 
 /* ===== 项目自有业务样式（demo 视觉基线迁移；响应式基线由 @shared/core/styles/responsive.css 承载） ===== */
 :root {
