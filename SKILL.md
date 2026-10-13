@@ -46,6 +46,18 @@ description: 公务员（国考/省考）选岗、资格审查、进面分与竞
 > - **报名期**：可以抓官方实时数据（工作流 §五）
 > - **历史/跨年**：**不存在一手来源**，因此**不提供**（过去的"报录比"全部是机构统计）
 
+### 已归档的进面分数据集（可直接用，不用重新抓）
+
+| 数据集 | 年份 | 覆盖 | 岗位数 | 位置 |
+|---|---|---:|---:|---|
+| 税务局进面分（粤/浙/陕） | 2026 年度 | 广东 557 · 浙江 388 · 陕西 237 | **1182** | `references/interview-scores-2026-tax-yue-zhe-shan.{md,csv}`<br>原始附件：`references/raw/2026-tax/` |
+
+中位进面线：**浙江 131.9 > 广东 128.2 > 陕西 125.7**。
+
+> ⚠️ 这是 **2026 年度**（2026-03 面试）的线，**不是** 2027 年度的预测值。
+> 2027 年度的进面分要到 2027 年 1–2 月官方才发布，现在不存在。详情见该数据集说明文档 §五。
+
+
 ---
 
 ## 三、工作流
@@ -90,29 +102,45 @@ description: 公务员（国考/省考）选岗、资格审查、进面分与竞
 | `scripts/_guard.py` | ✅ 可用 | **来源守门**：官方域名白名单硬校验（非官方直接抛错） |
 | `scripts/sources.py` | ✅ 可用 | **官方获取入口清单**：打印下载地址 + 手动下载流程 |
 | `scripts/fetch.py` | ✅ 可用 | 抓取器：国考专题资源 / 公告附件；**WAF 分级指引 + Cookie 注入** |
-| `scripts/interview_scores.py` | ✅ 可用 | 面试名单 fetch / parse / stats / lookup（**进面分**，自动识别省份） |
+| `scripts/interview_scores.py` | ✅ 可用 | 面试名单 fetch / parse / stats / lookup（**进面分**）。fetch 支持**公告页 + 附件直链**两种入参；parse 输出**省份 / 职位代码 / 单位及职位 / 进面最低分 / 进面人数 / 名单类型**；stats 支持 `--province` |
 | `scripts/pick.ts` | ✅ 可用 | 主流程 CLI：职位表 + 画像 → 资格审查 + 竞争度 + 排序（可输出 JSON） |
 | `engine/` | ✅ | 判定引擎 —— **从 job-picker 原样复制**（目录结构一致，import 零修改） |
 | `scripts/budget_salary.py` | ⏳ 待建 | 部门决算 → 人均工资福利支出 |
 
-### 4.0 进面分：两条获取路径（自动抓不到时走手动）
+> **⚠️ `职位代码` 跨省不唯一**：12 位代码由**各省局独立编号**，实测 134 个代码在粤/浙/陕之间重号。
+> 所以：① 数据去重键是 **(省份, 职位代码)**；② `lookup` 会列出该代码命中的**所有省份**并要求你按省份取行；
+> ③ 跨年度也不复用（陕西 2021 的 `300110001001` 与 2026 的完全不是同一个岗）。
+
+
+### 4.0 进面分：三条获取路径（自动抓不到时走手动）
 
 ```bash
-# ── 路径 A：脚本自动抓（站点可达时）──
+# ── 路径 A：脚本自动抓公告页（站点可达时）──
 python3 scripts/fetch.py attachments --url <官方公告页> --out ./raw
+#   或（推荐，文件名更可读）
+python3 scripts/interview_scores.py fetch --url <官方公告页> --out ./raw
 
-# ── 路径 B：你手动下载 → 我来解析（站点被 WAF/网络拦时）──
+# ── 路径 B：附件直链（页面被 WAF 拦、但下载接口不拦时）★ 陕西即此情况 ──
+#   ① 浏览器 / WebFetch 打开公告页 → 复制附件 downfile.jsp 直链
+#   ② 直接把直链喂给 fetch（会识别为直链，不再当网页解析）
+python3 scripts/interview_scores.py fetch --url "https://shaanxi.chinatax.gov.cn/module/download/downfile.jsp?classid=0&filename=<uuid>.xls" --out ./raw
+
+# ── 路径 C：你手动下载 → 我来解析（站点彻底不可达时）──
 python3 scripts/sources.py list            # ★ 先看「去哪下载」
 #   ① 浏览器打开清单里的地址，下载面试名单 .xls
 #   ② 全部丢进一个目录（如 ~/Downloads/gk-interview/）
 #   ③ 解析（自动识别省份、自动跳过非名单附件）
 python3 scripts/interview_scores.py parse --dir ~/Downloads/gk-interview --out scores.csv
-python3 scripts/interview_scores.py stats  --csv scores.csv
+python3 scripts/interview_scores.py stats  --csv scores.csv --province 广东
 python3 scripts/interview_scores.py lookup --csv scores.csv --codes 300110101002
 ```
 
-> **路径 B 是保底方案，永远可用**：只要能打开网页，就能拿到数据，
+> **⚠️ 取「历史」进面分请走省局官网**：旧年度的考录专题页会下线
+> （`bm.scs.gov.cn/kl2026`、`/kl2025` 均已 404），"国家局一个文件覆盖全国"只对**当年度**成立。
+
+> **路径 B / C 是保底方案，永远可用**：只要能打开网页，就能拿到数据，
 > 且**来源仍是官方原文**（你下载的文件本身就是官方发布的）。
+
 
 ---
 
@@ -164,19 +192,24 @@ python3 scripts/fetch.py attachments --url <官方公告页> --out ./raw \
 python3 scripts/interview_scores.py parse --dir ~/Downloads --out scores.csv
 ```
 
-**实测记录（2026-10-13，沙箱环境）**：
+**实测记录（2026-10-14，沙箱环境，复测）**：
 
 | 站点 | 结果 |
 |---|---|
-| `bm.scs.gov.cn` / `dl.scs.gov.cn`（国家公务员局） | ✅ 完全可达 |
+| `bm.scs.gov.cn` / `dl.scs.gov.cn`（国家公务员局当年专题） | ✅ 可达 |
+| `bm.scs.gov.cn/kl2026`、`/kl2025`（往年专题） | ❌ **404 已下线**（历史数据只能回省局取） |
+| `www.chinatax.gov.cn`（总局） | ✅ **200（首测时是 403，WAF 策略会变）** |
 | `guangdong.chinatax.gov.cn`（广东税务） | ✅ 可达，附件下载成功 |
-| `ndrc.gov.cn`（发改委） | ✅ 可达 |
-| `ningbo.chinatax.gov.cn` | ❌ 412 WAF（无头浏览器亦被识别，返回空页） |
-| `www.chinatax.gov.cn`（总局） | ❌ 403 WAF |
-| `shaanxi.chinatax.gov.cn` | ❌ TCP 超时（试 5 个 IP 全部 timeout） |
+| `zhejiang.chinatax.gov.cn`（浙江税务） | ✅ 可达，附件下载成功 |
+| `shaanxi.chinatax.gov.cn`（陕西税务） | ⚠️ HTML **412**（瑞数动态 JS）／附件接口 `downfile.jsp` **200 可直连** → 走路径 B |
+| `ningbo.chinatax.gov.cn` | ❌ 412 WAF |
+| `www.scs.gov.cn`（国家公务员局主站） | ⚠️ JS 挑战页（`__tst_status` cookie），非真不可达 |
 
-> ⚠️ **这是沙箱的网络环境所致，不代表你的电脑访问不了。**
+> ⚠️ **WAF 状态会随时间变化**（总局站 403 → 200），所以**每次都重新测**，不要照抄这张表。
+> 另外：**「页面被拦」≠「数据拿不到」** —— 瑞数类防护通常只护 HTML，
+> 文件下载 servlet（`downfile.jsp`）常常不设防；且 WebFetch / 浏览器能正常过 WAF 拿附件 UUID。
 > 脚本按"官方不可达 → 如实报错 + 给指引"设计，**绝不静默降级到第三方数据**。
+
 
 ---
 
@@ -206,3 +239,23 @@ python3 scripts/interview_scores.py parse --dir ~/Downloads --out scores.csv
 ## 八、已知陷阱
 
 见 **`references/pitfalls.md`**（持续累积，每次踩坑都追加）。
+
+---
+
+## 九、参考资料（已归档的一手数据）
+
+| 文件 | 内容 |
+|---|---|
+| `references/interview-scores-2026-tax-yue-zhe-shan.md` | **2026 年度粤/浙/陕税务局进面分数据集说明**（来源 URL、SHA256、分布摘要、口径、局限） |
+| `references/interview-scores-2026-tax-yue-zhe-shan.csv` | 同上的结构化数据，**1182 个岗位**，8 列 |
+| `references/raw/2026-tax/*.xls` | **官方原始附件 6 份**（面试公告附件1 + 递补公告附件），可直接打开核对 |
+| `references/data-sources.md` | 一手数据源总表（含实测可达性与降级策略） |
+| `references/pitfalls.md` | 踩坑记录（28 条） |
+
+**引用格式示例**（§七 输出规范）：
+
+> 广东税务 2026 年度进面线中位 **128.2**（557 个岗位）
+> [来源: 国家税务总局广东省税务局2026年度考试录用公务员面试公告 · 附件1 面试人员名单]
+> 本地留存 `references/raw/2026-tax/广东_2026_面试人员名单.xls`
+> SHA256 `aeb1647…d500c9`
+

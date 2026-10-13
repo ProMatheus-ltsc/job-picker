@@ -33,6 +33,7 @@ import sys
 import urllib.parse
 import warnings
 import zipfile
+from collections import Counter
 
 warnings.filterwarnings("ignore")
 
@@ -75,6 +76,9 @@ CITY_TO_PROVINCE: dict[str, str] = {
     "瑞安": "浙江", "义乌": "浙江", "东阳": "浙江", "慈溪": "浙江", "余姚": "浙江",
     "诸暨": "浙江", "嵊州": "浙江", "温岭": "浙江", "临海": "浙江", "新昌": "浙江",
     "平湖": "浙江", "海宁": "浙江", "桐乡": "浙江", "长兴": "浙江", "德清": "浙江",
+    "建德": "浙江", "乐清": "浙江", "龙港": "浙江", "玉环": "浙江", "兰溪": "浙江",
+    "龙泉": "浙江", "江山": "浙江", "永康": "浙江", "安吉": "浙江", "嘉善": "浙江",
+    "桐庐": "浙江", "淳安": "浙江", "象山": "浙江", "宁海": "浙江", "海盐": "浙江",
     # 陕西
     "西安": "陕西", "铜川": "陕西", "宝鸡": "陕西", "咸阳": "陕西", "渭南": "陕西",
     "延安": "陕西", "汉中": "陕西", "榆林": "陕西", "安康": "陕西", "商洛": "陕西",
@@ -110,7 +114,8 @@ def province_of(text: str) -> str:
             return name
         if name in CITY_TO_PROVINCE:
             return CITY_TO_PROVINCE[name]
-        return name
+        # ★ 不在这里返回未识别的县级市（如「建德」「乐清」）——交给下面的关键词兜底；
+        #   仍识别不出时返回 ""，由 parse_one 的文件级多数省份修正。
     for p in PROVINCE_KEYWORDS:
         if p in s:
             return p
@@ -118,12 +123,125 @@ def province_of(text: str) -> str:
 
 
 # ----------------------------- ① fetch -----------------------------
+# 文件名非法字符（Windows 尤其严格）
+_BAD_CHARS = re.compile(r'[\\/:*?"<>|\r\n\t]')
+
+
+def _clean_name(name: str, fallback: str) -> str:
+    """把链接文字/URL 参数洗成安全文件名，并保证有扩展名"""
+    n = urllib.parse.unquote(name or "").strip()
+    n = _BAD_CHARS.sub("_", n).strip(" .")
+    # 形如「1：面试人员名单」的全角冒号前的序号保留，去掉冒号本身
+    n = n.replace("：", "_").replace(":", "_").strip("_ ")
+    n = n[:80] or fallback
+    if not n.lower().endswith((".xls", ".xlsx", ".zip", ".rar", ".doc", ".docx", ".pdf")):
+        n += ".xls"
+    return n
+
+
+def _name_from_url(url: str) -> str:
+    """
+    从 URL 推文件名。优先级：
+      ① showname / filename 查询参数（downfile.jsp 这类下载器把真名放在这里）
+      ② 路径 basename
+    """
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    for key in ("showname", "filename", "file", "name"):
+        if q.get(key):
+            return _clean_name(q[key][0], key)
+    return _clean_name(
+        os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(url).path)), "attach"
+    )
+
+
+def _extract_attachments(html: str, base: str) -> list[tuple[str, str]]:
+    """
+    提取 (url, 显示名)。
+    ★ 必须成对抓取 href 与链接文字：多数税务局 CMS 的下载链接是
+      downfile.jsp?filename=<uuid>，URL 里没有文件名，只能靠链接文字区分，
+      否则 6 个附件会全部存成同一个名字互相覆盖。
+    """
+    out: list[tuple[str, str]] = []
+    # ① 带文字的 <a>（文字为空时退回 title 属性）
+    for m in re.finditer(r'(<a[^>]+href="([^"]+)"[^>]*>)(.*?)</a>', html, re.S | re.I):
+        tag, href, inner = m.group(1), m.group(2), m.group(3)
+        # ★ 这里必须判断「裸 URL」而不是 ATTACH_RE —— ATTACH_RE 匹配的是整个
+        #   href="…" 片段，拿裸 URL 去 search 恒为 None，会让所有附件都掉进兜底分支、
+        #   丢失文件名（广东局踩过：3 个附件全变成 UUID 名）。
+        if not _is_direct_file(href):
+            continue
+        text = re.sub(r"<[^>]+>", "", inner)
+        text = re.sub(r"\s+", " ", urllib.parse.unquote(text)).strip()
+        if not text:
+            t = re.search(r'title="([^"]*)"', tag, re.I)
+            text = urllib.parse.unquote(t.group(1)).strip() if t else ""
+        out.append((urllib.parse.urljoin(base, href), text))
+    # ② 兜底：裸链接
+    if not out:
+        for l in ATTACH_RE.findall(html):
+            out.append((urllib.parse.urljoin(base, l), ""))
+    return out
+
+
+def _unique_path(outdir: str, name: str, used: set[str]) -> str:
+    """重名自动加后缀，避免静默覆盖"""
+    stem, dot, ext = name.rpartition(".")
+    if not dot:
+        stem, ext = name, ""
+    cand, i = name, 1
+    while cand in used:
+        cand = f"{stem}({i}).{ext}" if ext else f"{stem}({i})"
+        i += 1
+    used.add(cand)
+    return os.path.join(outdir, cand)
+
+
+def _is_direct_file(url: str) -> bool:
+    """
+    判断 URL 是否直接指向一个文件（而非公告页）。
+    用于两种场景：
+      ① 静态附件直链 …/files/<uuid>.xls
+      ② CMS 下载器 …/module/download/downfile.jsp?filename=<uuid>.xls
+         （陕西/浙江税务局都是这种形态：页面被 WAF 拦，但下载接口可直连，
+           这时用浏览器/WebFetch 拿到直链后可直接灌进本函数）
+    """
+    path = urllib.parse.urlparse(url).path.lower()
+    if re.search(r"\.(xls|xlsx|zip|rar|doc|docx|pdf)$", path):
+        return True
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    return any(re.search(r"\.(xls|xlsx|zip|rar)$", v, re.I) for k in ("filename", "showname") for v in q.get(k, []))
+
+
 def fetch(urls: list[str], outdir: str) -> None:
     import requests
 
     os.makedirs(outdir, exist_ok=True)
+    used: set[str] = set()
     for url in urls:
-        host = urllib.parse.urlparse(url).netloc
+        # ── 直链模式：不解析 HTML，直接落盘 ──
+        if _is_direct_file(url):
+            fn = _name_from_url(url)
+            dst = _unique_path(outdir, fn, used)
+            print(f"[fetch] 直链 {url[:96]}")
+            try:
+                rr = requests.get(url, headers={"User-Agent": UA}, timeout=120)
+                if rr.status_code != 200 or len(rr.content) < 2000:
+                    print(f"  ✗ {fn} HTTP {rr.status_code} / {len(rr.content)}B")
+                    continue
+                with open(dst, "wb") as f:
+                    f.write(rr.content)
+                print(f"  ✓ {fn}  {len(rr.content) // 1024} KB")
+                if zipfile.is_zipfile(dst):
+                    with zipfile.ZipFile(dst) as z:
+                        for n in z.namelist():
+                            if n.lower().endswith((".xls", ".xlsx")):
+                                z.extract(n, outdir)
+                                print(f"      ↳ 解压 {n}")
+            except Exception as e:  # noqa: BLE001
+                print(f"  ✗ {fn} {type(e).__name__} {e}")
+            continue
+
+        # ── 页面模式：解析出附件再下载 ──
         print(f"[fetch] {url}")
         try:
             r = requests.get(url, headers={"User-Agent": UA}, timeout=30)
@@ -132,21 +250,22 @@ def fetch(urls: list[str], outdir: str) -> None:
             print(f"  ✗ 页面失败：{type(e).__name__} {e}")
             continue
 
-        # 页面编码兜底
         if r.encoding is None or r.encoding.lower() in ("iso-8859-1",):
             r.encoding = r.apparent_encoding or "utf-8"
-        links = ATTACH_RE.findall(r.text)
-        links = [urllib.parse.urljoin(url, l) for l in links]
-        # 只留含「名单/人员」字样的；若都没有则全留
-        named = [l for l in links if re.search(r"名单|人员|面试", urllib.parse.unquote(l))]
-        targets = named or links
-        print(f"  发现附件 {len(links)} 个，采用 {len(targets)} 个")
 
-        for link in dict.fromkeys(targets):
-            fn = os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(link).path)) or "attach"
-            if not fn.lower().endswith((".xls", ".xlsx", ".zip", ".rar")):
-                fn += ".xls"
-            dst = os.path.join(outdir, fn)
+        pairs = _extract_attachments(r.text, url)
+        # 分级筛选，避免把「确认参加面试声明」「考点路线图」等非名单附件也拖下来：
+        #   ① 含「名单」  → 只要这些
+        #   ② 含「人员/面试」→ 退而求其次
+        #   ③ 都没有      → 全留（宁可多下，不可漏）
+        t1 = [p for p in pairs if "名单" in p[1] + p[0]]
+        t2 = [p for p in pairs if re.search(r"人员|面试", p[1] + p[0])]
+        targets = t1 or t2 or pairs
+        print(f"  发现附件 {len(pairs)} 个，采用 {len(targets)} 个")
+
+        for link, text in targets:
+            fn = _clean_name(text, "attach") if text else _name_from_url(link)
+            dst = _unique_path(outdir, fn, used)
             try:
                 rr = requests.get(
                     link, headers={"User-Agent": UA, "Referer": url}, timeout=60
@@ -224,33 +343,62 @@ def parse_one(path: str) -> list[dict]:
         ) or next((c for c in df.columns if "分数" in c), None)
         if not col_major or not col_score:
             continue
+        col_name = next((c for c in df.columns if "姓名" in c), None)
+        col_zkz = next((c for c in df.columns if "准考证" in c), None)
 
-        # 只保留含 12 位职位代码的行（过滤标题/空行/说明行）
-        df = df[df[col_major].fillna("").str.contains(r"\d{12}", regex=True)]
+        # ★ 顺序至关重要：「职位名称及代码」只在岗位首行出现，必须先 ffill 再筛行。
+        #   若先按「含 12 位代码」筛，会把同岗位的续行（其余进面考生）整行丢掉，
+        #   于是「进面人数」恒等于 1 —— 这是最容易错且不易察觉的地方。
+        df["_pos"] = df[col_major].ffill()
+        df["_code"] = df["_pos"].fillna("").astype(str).str.extract(CODE_RE)[0]
+        df["_score"] = pd.to_numeric(df[col_score], errors="coerce")
+
+        # 考生行判定：有姓名或准考证号才算，避免表尾说明行/空行被 ffill 带上下一个代码
+        keys = [c for c in (col_name, col_zkz) if c]
+        if keys:
+            df = df[df[keys].fillna("").apply(lambda s: s.str.strip().ne("")).any(axis=1)]
+        df = df.dropna(subset=["_code"])
         if df.empty:
             continue
 
-        # 「职位名称及代码」通常只在首行出现 → 前向填充
-        df["_pos"] = df[col_major].ffill()
-        df["_code"] = df["_pos"].str.extract(CODE_RE)[0]
-        df["_score"] = pd.to_numeric(df[col_score], errors="coerce")
-        df = df.dropna(subset=["_code", "_score"])
+        kind = "递补名单" if "递补" in os.path.basename(path) else "主名单"
 
         # 同一岗位多行（每个进面考生一行）→ 聚合
-        for code, g in df.groupby("_code"):
+        for code, g in df.groupby("_code", sort=False):
             pos = str(g["_pos"].iloc[0]).replace("\n", "").strip()
             pos_clean = re.sub(r"[（(]\s*\d{12}\s*[）)]\s*$", "", pos).strip()
+            # 分数：广东/浙江只在首行给值，陕西每行重复 → 取非空值里的最小值最稳
+            scores = g["_score"].dropna()
+            if scores.empty:
+                continue
             out.append(
                 {
                     "省份": province_of(pos_clean) or province_of(os.path.basename(path)),
                     "职位代码": code,
                     "单位及职位": pos_clean,
-                    "进面最低分": round(float(g["_score"].median()), 1),
-                    "进面人数": len(g),
+                    "进面最低分": round(float(scores.min()), 1),
+                    "进面人数": int(len(g)),
+                    "名单类型": kind,
                     "来源文件": os.path.basename(path),
                     "工作表": sn,
                 }
             )
+
+    # ── 文件级省份兜底 ──────────────────────────────────────────────
+    # 一份面试名单只覆盖一个省 / 一个计划单列市（由该省局发布），
+    # 因此用「本文件出现最多的省份」修正识别不出来的县级市、县局
+    # （如「建德市税务局」「博罗县税务局」——它们的名字里没有省级关键词）。
+    if out:
+        c = Counter(r["省份"] for r in out if r["省份"] in PROVINCE_KEYWORDS)
+        if c:
+            main_p = c.most_common(1)[0][0]
+            fixed = 0
+            for r in out:
+                if r["省份"] not in PROVINCE_KEYWORDS:
+                    r["省份"] = main_p
+                    fixed += 1
+            if fixed:
+                print(f"  ↳ 省份兜底：{fixed} 个县级局归入「{main_p}」")
     return out
 
 
@@ -269,13 +417,24 @@ def parse_dir(d: str, out_csv: str) -> None:
         print(f"  {os.path.basename(f)} → {len(got)} 个岗位")
         rows.extend(got)
 
-    # 去重（同代码保留分数更高的一条 = 主名单优先于递补名单）
-    best: dict[str, dict] = {}
+    # 去重（同一岗位可能同时出现在主名单与递补名单里）：
+    #   ① 主名单优先 —— 官方面试公告附件1 里的「进入面试最低分数」才是该岗位的进面线；
+    #      递补名单里写的是递补者本人的分数（更低），拿它当进面线会低估。
+    #   ② 同为一种名单时取分数更高的一条。
+    #
+    # ★★ 去重键必须是 (省份, 职位代码)，不能只用职位代码：
+    #    12 位职位代码**不是全国唯一**——税务系统各省局独立编号，
+    #    实测 300110106001 同时出现在广东 / 浙江 / 陕西（134 个代码跨省重号）。
+    #    只用代码做键会把别省的岗位静默吃掉，且完全看不出错。
+    def _rank(x: dict) -> tuple[bool, float]:
+        return (x.get("名单类型") == "主名单", float(x["进面最低分"]))
+
+    best: dict[tuple[str, str], dict] = {}
     for r in rows:
-        k = r["职位代码"]
-        if k not in best or r["进面最低分"] > best[k]["进面最低分"]:
+        k = (r["省份"], r["职位代码"])
+        if k not in best or _rank(r) > _rank(best[k]):
             best[k] = r
-    rows = sorted(best.values(), key=lambda x: (-x["进面最低分"], x["职位代码"]))
+    rows = sorted(best.values(), key=lambda x: (x["省份"], -x["进面最低分"], x["职位代码"]))
 
     with open(out_csv, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -290,10 +449,12 @@ def load(csv_path: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def stats(csv_path: str, match: str | None) -> None:
+def stats(csv_path: str, match: str | None, province: str | None = None) -> None:
     import statistics as st
 
     rows = load(csv_path)
+    if province:
+        rows = [r for r in rows if province in r.get("省份", "")]
     if match:
         rows = [r for r in rows if match in r["单位及职位"]]
     if not rows:
@@ -306,6 +467,13 @@ def stats(csv_path: str, match: str | None) -> None:
         f" ｜ 75% {scores[len(scores)*3//4]} ｜ 最高 {scores[-1]}"
         f" ｜ 平均 {round(st.mean(scores),1)}"
     )
+    if province:
+        hires = [int(r["进面人数"]) for r in rows if str(r.get("进面人数", "")).isdigit()]
+        if hires:
+            print(
+                f"进面人数合计 {sum(hires)} ｜ 单岗中位 {int(st.median(hires))} ｜ "
+                f"≥3 人岗位 {sum(1 for h in hires if h >= 3)}/{len(hires)}"
+            )
     print("\n分数段分布：")
     edges = [0, 110, 115, 120, 125, 130, 135, 200]
     for lo, hi in zip(edges, edges[1:]):
@@ -319,17 +487,27 @@ def stats(csv_path: str, match: str | None) -> None:
 
 
 def lookup(csv_path: str, codes: list[str]) -> None:
-    index = {r["职位代码"]: r for r in load(csv_path)}
-    print(f"{'职位代码':<14}{'进面分':>7}  单位及职位")
-    print("-" * 84)
+    # ★ 一个职位代码可能命中多个省份（各省局独立编号）→ 必须按代码聚合、全部列出
+    index: dict[str, list[dict]] = {}
+    for r in load(csv_path):
+        index.setdefault(r["职位代码"], []).append(r)
+
+    print(f"{'职位代码':<14}{'省份':<8}{'进面分':>7}  单位及职位")
+    print("-" * 92)
     for c in codes:
         c = c.strip()
-        r = index.get(c)
-        if r:
-            print(f"{c:<14}{r['进面最低分']:>7}  {r['单位及职位'][:56]}")
-        else:
-            print(f"{c:<14}{'—':>7}  未收录（该岗去年未招 / 代码变更）")
-    print("\n※ 未收录 ≠ 好考。国考职位代码跨年有延续性但非固定，"
+        hits = index.get(c)
+        if not hits:
+            print(f"{c:<14}{'—':<8}{'—':>7}  未收录（该岗去年未招 / 代码变更 / 不在已收录省份）")
+            continue
+        for r in sorted(hits, key=lambda x: x.get("省份", "")):
+            print(
+                f"{c:<14}{r.get('省份',''):<8}{r['进面最低分']:>7}  {r['单位及职位'][:52]}"
+            )
+        if len(hits) > 1:
+            print(f"{'':<22}↳ ⚠ 该代码命中 {len(hits)} 个省份，"
+                  f"请按你报考的省份取对应行（代码非全国唯一）")
+    print("\n※ 未收录 ≠ 好考。国考职位代码跨年、跨省都会变，"
           "优先查「同单位 / 同地区」的历史分。")
 
 
@@ -339,7 +517,8 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p1 = sub.add_parser("fetch", help="从公告页下载面试名单附件")
-    p1.add_argument("--url", action="append", required=True, help="公告页 URL（可多次）")
+    p1.add_argument("--url", action="append", required=True,
+                    help="公告页 URL，或附件直链（可多次）")
     p1.add_argument("--out", required=True, help="输出目录")
 
     p2 = sub.add_parser("parse", help="把名单解析成 CSV")
@@ -349,6 +528,7 @@ def main() -> None:
     p3 = sub.add_parser("stats", help="统计分数分布")
     p3.add_argument("--csv", required=True)
     p3.add_argument("--match", default=None, help="只看含该关键词的岗位，如「西安」")
+    p3.add_argument("--province", default=None, help="只看该省份，如「广东」")
 
     p4 = sub.add_parser("lookup", help="按职位代码查历史进面分")
     p4.add_argument("--csv", required=True)
@@ -360,7 +540,7 @@ def main() -> None:
     elif a.cmd == "parse":
         parse_dir(a.dir, a.out)
     elif a.cmd == "stats":
-        stats(a.csv, a.match)
+        stats(a.csv, a.match, a.province)
     elif a.cmd == "lookup":
         lookup(a.csv, a.codes.split(","))
 
