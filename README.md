@@ -92,10 +92,11 @@ job-picker/
 ├── assets/profile.md            考生画像输入模板
 ├── references/
 │   ├── data-sources.md          一手数据源总表（含实测可达性 + 已归档数据集索引）
-│   ├── pitfalls.md              28 条踩坑记录
-│   ├── interview-scores-2026-tax-yue-zhe-shan.md   ★ 2026 年度粤/浙/陕税务局进面分说明
-│   ├── interview-scores-2026-tax-yue-zhe-shan.csv  ★ 同上结构化数据（1182 岗）
-│   └── raw/2026-tax/*.xls       ★ 官方原始附件 6 份（可回溯核对）
+│   ├── pitfalls.md              33 条踩坑记录
+│   ├── interview-scores-2026-tax-yue-zhe-shan.md / .csv   ★ 2026 年度粤/浙/陕税务局进面分（1182 岗）
+│   ├── interview-scores-2025-tax-yue-zhe-shan.md / .csv   ★ 2025 年度同上（1229 岗）
+│   ├── tax-scores-yoy-2025-2026.md                        ★ 跨年对比（同岗位 +3.6 分/年）
+│   └── raw/{2026-tax,2025-tax}/*.xls     ★ 官方原始附件（两年度 × 3 省 × 2 名单 = 12 份）
 ├── engine/                      ★ 判定引擎（与 Web 版 job-picker 同源）
 │   ├── types/index.ts
 │   ├── core/{eligibility,competition,salary,report,mapping,filter,scoring}.ts
@@ -112,10 +113,15 @@ job-picker/
 
 | 数据集 | 年份 | 覆盖 | 岗位数 |
 |---|---|---:|---:|
+| 税务局进面分（粤/浙/陕） | 2025 年度 | 广东 520 · 浙江 441 · 陕西 268 | **1229** |
 | 税务局进面分（粤/浙/陕） | 2026 年度 | 广东 557 · 浙江 388 · 陕西 237 | **1182** |
 
-中位进面线：浙江 **131.9** > 广东 **128.2** > 陕西 **125.7**。
-均为招录机关官方面试公告附件的原件，已留档并附 SHA256（详见 `references/interview-scores-2026-tax-yue-zhe-shan.md`）。
+中位进面线：2026 年度 浙江 **131.9** > 广东 **128.2** > 陕西 **125.7**；
+2025 年度 浙江 **128.8** > 广东 **124.9** > 陕西 **123.65**。
+**跨年同岗位配对（806 样本）：一年上涨约 3.6 分，70% 岗位在涨。**
+
+均为招录机关官方面试公告附件的原件，已留档并附 SHA256（详见 `references/` 下各说明文档）。
+
 
 
 ---

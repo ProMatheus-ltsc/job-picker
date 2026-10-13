@@ -7,6 +7,7 @@ __pycache__/
 # ★ 必须写 /raw/ 只匹配根目录 —— 写 raw/ 会把 references/raw/2026-tax/ 里的
 #   官方原始附件也一起忽略掉，归档就白做了
 /raw/
+/raw2025/
 
 # 本地 agent 记忆，不入库
 .workbuddy/

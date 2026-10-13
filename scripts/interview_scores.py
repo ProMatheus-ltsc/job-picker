@@ -184,12 +184,17 @@ def _extract_attachments(html: str, base: str) -> list[tuple[str, str]]:
 
 
 def _unique_path(outdir: str, name: str, used: set[str]) -> str:
-    """重名自动加后缀，避免静默覆盖"""
+    """
+    重名自动加后缀，避免静默覆盖。
+    ★ 必须同时看「本次进程已用过的名字」和「磁盘上已存在的文件」——
+      否则分多次调用 fetch 时（比如逐省抓名单），后一次会把前一次的同名附件覆盖掉，
+      而且文件名一样、大小也接近，几乎发现不了。
+    """
     stem, dot, ext = name.rpartition(".")
     if not dot:
         stem, ext = name, ""
     cand, i = name, 1
-    while cand in used:
+    while cand in used or os.path.exists(os.path.join(outdir, cand)):
         cand = f"{stem}({i}).{ext}" if ext else f"{stem}({i})"
         i += 1
     used.add(cand)
