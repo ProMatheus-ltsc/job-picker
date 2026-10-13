@@ -1,0 +1,11 @@
+{
+  "name": "job-picker-skill",
+  "private": true,
+  "description": "选岗 skill：官方数据抓取 + 判定引擎（engine/ 与 job-picker 仓库保持一致）",
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
