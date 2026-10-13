@@ -185,9 +185,9 @@
 - **实操**：不要去执行 JS 挑战、不要装无头浏览器。**页面用 WebFetch 读，数据用 `/module/*` 直连**。
   （本次就是靠这个把"陕西站完全不可达"变成"三省全部取到"。）
 
-### 30. 陕西站（苏迪 CMS）信息公开列表的正确调法
+### 30. 陕西站（苏迪 CMS）信息公开列表的正确调法 ★ 已固化为命令
 - **现象**：`POST /module/xxgk/search.jsp` 若参数不全，返回 `请传入正确参数！`（57 字节）
-- **可用最小参数集**（缺一不可）：
+- **可用最小参数集**（缺一不可，**多了也不行**）：
   ```
   POST /module/xxgk/search.jsp
   infotypeId=A07              # 人事管理
@@ -197,7 +197,17 @@
   divid=list
   ```
   另外必须带 `X-Requested-With: XMLHttpRequest` 与 `Referer: …/col/col32162/index.html`
-- **坑**：多加的参数（`page` / `currentpage` / `vc_title`）反而会让它退回「请传入正确参数」
+- **坑 1**：多加的参数（`page` / `currentpage` / `pagenum` / `startrecord`…）会让它退回「请传入正确参数」，
+  或**被直接忽略**——实测 8 种分页参数全部无效，接口**固定返回最新 20 条**（一般覆盖近两年，够定位年度公告）
+- **坑 2**：浙江站是**同一套 CMS**，只是参数不同
+  （`infotypeId=Z2402 & jdid=15 & area=11330000002484088Y & columnid=24800`）；
+  **广东站不是**这套 CMS，没有该接口
+- **✅ 已固化为命令**，不用再手工拼参数：
+  ```bash
+  python3 scripts/interview_scores.py discover --site list
+  python3 scripts/interview_scores.py discover --site 陕西 --year 2025 --kw 面试
+  ```
+  预设表在 `SITES`（`scripts/interview_scores.py`）；新增省份只需补 `columnid/infotypeId/jdid/area` 四项
 - **返回**：一个 HTML 表格，含 20 条文章（标题 + 责任处室 + 日期 + 链接）
 
 ### 31. 该 CMS 的锚点用**单引号**，双引号正则会漏掉全部链接
@@ -220,5 +230,17 @@
 - **修法**：**加一个无害的查询参数破缓存**再试，例如
   `…art_32162_637838.html?xxgkhide=1&v=2` —— 加上后立刻读到了完整正文与附件直链
 - **不要**因此就判定"页面为空"或"站点不可达"
+
+### 34. 不要为了过 WAF 去装无头浏览器 —— 本次是死路，且有环境坑
+- **过程**：为攻破陕西站，装了 `agent-browser`（`npm i -g agent-browser`）想用真浏览器过瑞数挑战
+- **结果**：**完全没用上**。真正解决问题的是 #29 的 `/module/*` 接口
+- **若将来确实要用，两个坑先记下**：
+  1. `npm i -g agent-browser` 生成的 shim 在 **Git Bash 下路径拼错**：
+     `Cannot find module 'c:\c\Users\…'`（`/c/…` 被当成相对路径又加了盘符）→
+     绕过办法：`node "$(npm root -g)/agent-browser/bin/agent-browser.js" <cmd>`
+  2. 本机**没有 Chrome**，会自动去下载（~数百 MB）→ 改用系统自带的
+     Edge：`--executable-path "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"`
+     （注意：`--executable-path` 在守护进程已启动时会被忽略，必须先 `close`）
+- **结论**：**先试 `/module/*` 接口通不通**；通了就完全不需要浏览器
 
 

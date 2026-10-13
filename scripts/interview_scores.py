@@ -37,6 +37,48 @@ from collections import Counter
 
 warnings.filterwarnings("ignore")
 
+# 来源守门（与 fetch.py 同一套硬约束：非官方域名直接抛错）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from _guard import assert_official  # noqa: E402
+except Exception:  # noqa: BLE001
+
+    def assert_official(url: str) -> None:  # type: ignore[misc]
+        pass
+
+
+# ── 省税务局官网「公务员招录」栏目预设（苏迪 CMS 信息公开接口）★★ ──────────
+# 这是本项目攻破瑞数类 WAF 的核心手段：**HTML 页面被 412 拦，但 /module/* 接口放行**。
+#   · 正文阅读 → WebFetch（能过 WAF）
+#   · 附件下载 → /module/download/downfile.jsp（不受保护）
+#   · 栏目列表 → POST /module/xxgk/search.jsp（本预设，含历史年份）
+# 详见 references/pitfalls.md #29~#31
+#
+# ⚠️ 参数是「最小集且不能多」：多带 page/currentpage/vc_title 会退回「请传入正确参数！」
+# ⚠️ 该接口**忽略分页参数**，固定返回最新约 20 条（一般覆盖近两年，够定位年度公告）
+SITES: dict[str, dict] = {
+    "陕西": {
+        "base": "https://shaanxi.chinatax.gov.cn",
+        "col_path": "/col/col32162/index.html",
+        "params": {
+            "columnid": "32162",
+            "infotypeId": "A07",
+            "jdid": "1",
+            "area": "11610000160006543",
+        },
+    },
+    "浙江": {
+        "base": "http://zhejiang.chinatax.gov.cn",
+        "col_path": "/col/col24800/index.html",
+        "params": {
+            "columnid": "24800",
+            "infotypeId": "Z2402",
+            "jdid": "15",
+            "area": "11330000002484088Y",
+        },
+    },
+}
+
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -516,6 +558,108 @@ def lookup(csv_path: str, codes: list[str]) -> None:
           "优先查「同单位 / 同地区」的历史分。")
 
 
+# --------------------- ⑤ discover：找公告页（绕过 WAF） ---------------------
+def _parse_cms_rows(html: str) -> list[dict]:
+    """
+    解析苏迪 CMS 信息公开列表（`search.jsp` 返回的 HTML 表格）为结构化行。
+
+    ★ 两个必须兼容的点：
+      1. 锚点用**单引号** `href='…'` —— 只写双引号的正则会命中 0 条，
+         从而误判成"接口没返回数据"（陕西站实测踩过）
+      2. 标题优先取锚点文字，取不到再退回 `title=` 属性
+    """
+    out: list[dict] = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S | re.I):
+        m = re.search(
+            r"""href=['"]([^'"]*art_\d+_\d+\.html[^'"]*)['"][^>]*>(.*?)</a>""",
+            tr,
+            re.S | re.I,
+        )
+        if not m:
+            continue
+        href, inner = m.group(1), m.group(2)
+        title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", inner)).strip()
+        if not title:
+            t = re.search(r"""title=['"]([^'"]*)['"]""", tr, re.I)
+            title = urllib.parse.unquote(t.group(1)).strip() if t else ""
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", tr)).strip()
+        d = re.search(r"(\d{4}-\d{2}-\d{2})", text)
+        out.append(
+            {
+                "url": href if href.startswith("http") else "",
+                "path": href,
+                "title": urllib.parse.unquote(title),
+                "date": d.group(1) if d else "",
+            }
+        )
+    return out
+
+
+def discover(site: str, year: str | None, kw: str | None) -> None:
+    """列出某省税务局官网「公务员招录」栏目的公告（含历史年份）"""
+    import requests
+
+    if site not in SITES:
+        print(f"未知站点「{site}」。已收录：{'、'.join(SITES)}")
+        print("（其他省份可自行补预设：拿该栏目 URL 里的 columnid / area，")
+        print("  以及页面隐藏域 infotypeId / jdid 即可，见 references/pitfalls.md #30）")
+        return
+
+    cfg = SITES[site]
+    url = cfg["base"] + "/module/xxgk/search.jsp"
+    assert_official(url)  # ★ 非官方域名直接抛错，不做静默降级
+    referer = cfg["base"] + cfg["col_path"]
+    data = dict(cfg["params"])
+    data["divid"] = "list"
+
+    r = requests.post(
+        url,
+        headers={
+            "User-Agent": UA,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": referer,
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+        data=data,
+        timeout=30,
+    )
+    r.encoding = "utf-8"
+
+    if "请传入正确参数" in r.text:
+        print(f"  ✗ 接口要求最小参数集，当前预设被拒：{data}")
+        print("     ↳ 别加 page / currentpage / vc_title 等多余参数（见 pitfalls #30）")
+        return
+    if len(r.text) < 400:
+        print(f"  ✗ 接口返回异常（{len(r.text)}B）：{r.text.strip()[:80]}")
+        return
+
+    rows = _parse_cms_rows(r.text)
+    if not rows:
+        print("  ✗ 未解析到文章行（可能是站点换了模板；注意锚点引号形态）")
+        return
+
+    print(f"[discover] {site} · {referer}")
+    print(f"  接口返回 {len(rows)} 条（该接口忽略分页参数，固定为最新约 20 条）")
+
+    if year:
+        rows = [x for x in rows if f"/{year}/" in x["path"]]
+    if kw:
+        rows = [x for x in rows if kw in x["title"]]
+    if not rows:
+        print("  没有匹配的条目（换年份/关键词，或该年份公告已过 20 条窗口）")
+        return
+
+    print()
+    print(f"{'日期':<12}{'标题':<50}链接")
+    print("-" * 108)
+    for x in sorted(rows, key=lambda z: z["date"], reverse=True):
+        full = x["path"] if x["path"].startswith("http") else cfg["base"] + "/" + x["path"].lstrip("/")
+        print(f"{x['date']:<12}{x['title'][:46]:<50}{full}")
+    print()
+    print("下一步：用 WebFetch 打开上面的公告页 → 取出 downfile.jsp 附件直链")
+    print("        → python3 interview_scores.py fetch --url '<直链>' --out ./raw")
+
+
 # ----------------------------- CLI -----------------------------
 def main() -> None:
     ap = argparse.ArgumentParser(description="国考面试名单抓取/解析/查询")
@@ -539,6 +683,14 @@ def main() -> None:
     p4.add_argument("--csv", required=True)
     p4.add_argument("--codes", required=True, help="逗号分隔")
 
+    p5 = sub.add_parser(
+        "discover",
+        help="列出某省税务局「公务员招录」栏目的公告（绕过瑞数 WAF，含历史年份）",
+    )
+    p5.add_argument("--site", required=True, help="省份，如 陕西 / 浙江；用 list 看已收录")
+    p5.add_argument("--year", default=None, help="只看该年份，如 2025")
+    p5.add_argument("--kw", default=None, help="标题关键词，如「面试公告」")
+
     a = ap.parse_args()
     if a.cmd == "fetch":
         fetch(a.url, a.out)
@@ -548,6 +700,13 @@ def main() -> None:
         stats(a.csv, a.match, a.province)
     elif a.cmd == "lookup":
         lookup(a.csv, a.codes.split(","))
+    elif a.cmd == "discover":
+        if a.site == "list":
+            print("已收录站点：")
+            for k, v in SITES.items():
+                print(f"  {k:<6} {v['base']}{v['col_path']}  params={v['params']}")
+        else:
+            discover(a.site, a.year, a.kw)
 
 
 if __name__ == "__main__":

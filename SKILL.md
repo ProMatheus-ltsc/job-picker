@@ -114,7 +114,7 @@ description: 公务员（国考/省考）选岗、资格审查、进面分与竞
 | `scripts/_guard.py` | ✅ 可用 | **来源守门**：官方域名白名单硬校验（非官方直接抛错） |
 | `scripts/sources.py` | ✅ 可用 | **官方获取入口清单**：打印下载地址 + 手动下载流程 |
 | `scripts/fetch.py` | ✅ 可用 | 抓取器：国考专题资源 / 公告附件；**WAF 分级指引 + Cookie 注入** |
-| `scripts/interview_scores.py` | ✅ 可用 | 面试名单 fetch / parse / stats / lookup（**进面分**）。fetch 支持**公告页 + 附件直链**两种入参；parse 输出**省份 / 职位代码 / 单位及职位 / 进面最低分 / 进面人数 / 名单类型**；stats 支持 `--province` |
+| `scripts/interview_scores.py` | ✅ 可用 | 面试名单 **discover / fetch / parse / stats / lookup**（进面分）。fetch 支持**公告页 + 附件直链**两种入参；parse 输出**省份 / 职位代码 / 单位及职位 / 进面最低分 / 进面人数 / 名单类型**；stats 支持 `--province` |
 | `scripts/pick.ts` | ✅ 可用 | 主流程 CLI：职位表 + 画像 → 资格审查 + 竞争度 + 排序（可输出 JSON） |
 | `engine/` | ✅ | 判定引擎 —— **从 job-picker 原样复制**（目录结构一致，import 零修改） |
 | `scripts/budget_salary.py` | ⏳ 待建 | 部门决算 → 人均工资福利支出 |
@@ -123,26 +123,26 @@ description: 公务员（国考/省考）选岗、资格审查、进面分与竞
 > 所以：① 数据去重键是 **(省份, 职位代码)**；② `lookup` 会列出该代码命中的**所有省份**并要求你按省份取行；
 > ③ 跨年度也不复用（陕西 2021 的 `300110001001` 与 2026 的完全不是同一个岗）。
 
-
-### 4.0 进面分：三条获取路径（自动抓不到时走手动）
+### 4.0 进面分：四步流水线（含"找不到公告页"的情形）
 
 ```bash
-# ── 路径 A：脚本自动抓公告页（站点可达时）──
-python3 scripts/fetch.py attachments --url <官方公告页> --out ./raw
-#   或（推荐，文件名更可读）
-python3 scripts/interview_scores.py fetch --url <官方公告页> --out ./raw
+# ── 第 0 步（新增）：找不到某年公告页时，用 discover 列出该省招录栏目全量公告 ★ ──
+python3 scripts/interview_scores.py discover --site list            # 看已收录哪些省
+python3 scripts/interview_scores.py discover --site 陕西 --year 2025 --kw 面试
+#   → 直接给出「面试公告 / 递补面试公告」的官方 URL（含历史年份）
+#   原理：HTML 页面被瑞数 WAF 拦（412），但 CMS 的 /module/* 接口放行
+#   已收录：陕西、浙江（其他省份按 pitfalls #30 补 4 个参数即可）
 
-# ── 路径 B：附件直链（页面被 WAF 拦、但下载接口不拦时）★ 陕西即此情况 ──
-#   ① 浏览器 / WebFetch 打开公告页 → 复制附件 downfile.jsp 直链
-#   ② 直接把直链喂给 fetch（会识别为直链，不再当网页解析）
-python3 scripts/interview_scores.py fetch --url "https://shaanxi.chinatax.gov.cn/module/download/downfile.jsp?classid=0&filename=<uuid>.xls" --out ./raw
+# ── 第 1 步：从公告页拿附件 ──
+python3 scripts/fetch.py attachments --url <官方公告页> --out ./raw      # 站点可达时
+python3 scripts/interview_scores.py fetch --url <官方公告页> --out ./raw  # 同上，文件名更可读
 
-# ── 路径 C：你手动下载 → 我来解析（站点彻底不可达时）──
-python3 scripts/sources.py list            # ★ 先看「去哪下载」
-#   ① 浏览器打开清单里的地址，下载面试名单 .xls
-#   ② 全部丢进一个目录（如 ~/Downloads/gk-interview/）
-#   ③ 解析（自动识别省份、自动跳过非名单附件）
-python3 scripts/interview_scores.py parse --dir ~/Downloads/gk-interview --out scores.csv
+# ── 第 1' 步：页面被 WAF 拦时 → 用 WebFetch 打开公告页取附件直链，再直连下载 ──
+python3 scripts/interview_scores.py fetch \
+  --url "https://shaanxi.chinatax.gov.cn/module/download/downfile.jsp?classid=0&filename=<uuid>.xls" --out ./raw
+
+# ── 第 2 步：解析（自动识别省份、自动跳过非名单附件）──
+python3 scripts/interview_scores.py parse  --dir ./raw --out scores.csv
 python3 scripts/interview_scores.py stats  --csv scores.csv --province 广东
 python3 scripts/interview_scores.py lookup --csv scores.csv --codes 300110101002
 ```
@@ -150,8 +150,22 @@ python3 scripts/interview_scores.py lookup --csv scores.csv --codes 300110101002
 > **⚠️ 取「历史」进面分请走省局官网**：旧年度的考录专题页会下线
 > （`bm.scs.gov.cn/kl2026`、`/kl2025` 均已 404），"国家局一个文件覆盖全国"只对**当年度**成立。
 
-> **路径 B / C 是保底方案，永远可用**：只要能打开网页，就能拿到数据，
-> 且**来源仍是官方原文**（你下载的文件本身就是官方发布的）。
+> **⚠️ 广东省税务局不是这套 CMS** —— 它的人员招录栏目只有"最新 15 条"且无服务端分页、
+> 也**没有** `/module/xxgk/search.jsp`。广东的历史公告页只能靠**搜索引擎**定位
+> （用公告全称搜索，官方 URL 通常能被索引到），再走正常 fetch 流程。
+
+
+### 4.0b 兜底：完全自动化的路都走不通时
+
+```bash
+# ── 手动下载 → 解析（只要你能打开网页，这条路永远可用）──
+python3 scripts/sources.py list            # ★ 先看「去哪下载」
+#   ① 浏览器打开清单里的地址，下载面试名单 .xls
+#   ② 全部丢进一个目录（如 ~/Downloads/gk-interview/）
+python3 scripts/interview_scores.py parse --dir ~/Downloads/gk-interview --out scores.csv
+```
+
+> **来源仍是官方原文**：你下载的文件本身就是招录机关发布的，不构成"降级到二手数据"。
 
 
 ---

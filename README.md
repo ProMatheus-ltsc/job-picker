@@ -62,12 +62,21 @@ npx tsx scripts/pick.ts --jobs ./raw/招考简章.xls \
 ### 3. 查历史进面分（官方面试名单）
 
 ```bash
-python3 scripts/sources.py list                      # ★ 先看「去哪下载」
-# 下载后（或脚本自动抓）：
+# 0) 先找公告页（站点被 WAF 拦时尤其有用，含历史年份）
+python3 scripts/interview_scores.py discover --site list
+python3 scripts/interview_scores.py discover --site 陕西 --year 2025 --kw 面试
+
+# 1) 下载名单附件（公告页 URL 或附件直链都可以）
+python3 scripts/interview_scores.py fetch --url <官方公告页> --out ./raw
+
+# 2) 解析 / 统计 / 反查
 python3 scripts/interview_scores.py parse  --dir ./raw --out scores.csv
-python3 scripts/interview_scores.py stats  --csv scores.csv --match 西安
+python3 scripts/interview_scores.py stats  --csv scores.csv --province 广东
 python3 scripts/interview_scores.py lookup --csv scores.csv --codes 300110101002
 ```
+
+> 已归档的两年度数据可直接用，无需重新抓：见 `references/interview-scores-202{5,6}-tax-yue-zhe-shan.csv`。
+
 
 ---
 
@@ -105,7 +114,7 @@ job-picker/
     ├── _guard.py                来源守门（域名白名单硬校验）
     ├── sources.py               官方获取入口清单
     ├── fetch.py                 抓取器（含反爬分级处理 + Cookie 注入）
-    ├── interview_scores.py      面试名单 → 进面分（fetch / parse / stats / lookup）
+    ├── interview_scores.py      面试名单 → 进面分（discover / fetch / parse / stats / lookup）
     └── pick.ts                  主流程 CLI
 ```
 
