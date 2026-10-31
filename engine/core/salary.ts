@@ -97,6 +97,17 @@ const VERIFIED: Array<{ key: string; data: Omit<CitySalary, 'city'> }> = [
 /** 未收录城市的档位兜底（口径来自公开的全国分档统计） */
 const TIERS: Array<{ re: RegExp; label: string; data: Omit<CitySalary, 'city'> }> = [
   {
+    // ⚠️ 广东省考考区共 21 个，VERIFIED 只覆盖 10 个。不单列这条，
+    //    肇庆/茂名/梅州等 11 个考区（3630 个岗位）会落到下面的「中西部普通地级市」9-13 万，
+    //    对粤东西北是系统性低估 3~5 万。
+    re: /肇庆|茂名|梅州|清远|河源|韶关|揭阳|阳江|汕尾|云浮|潮州/,
+    label: '粤东西北',
+    data: {
+      payMin: 13, payMax: 16, cashMin: 6200, cashMax: 8200, fundMin: 2000, fundMax: 3000,
+      housePrice: 7500, basis: '档位估算（粤东西北，无一手数据）',
+    },
+  },
+  {
     re: /北京|上海/,
     label: '北京/上海',
     data: {
@@ -123,10 +134,10 @@ const TIERS: Array<{ re: RegExp; label: string; data: Omit<CitySalary, 'city'> }
 ];
 
 const DEFAULT_TIER = {
-  label: '普通地级市（估算）',
+  label: '未收录城市（估算）',
   data: {
     payMin: 9, payMax: 13, cashMin: 4500, cashMax: 6000, fundMin: 1200, fundMax: 2000,
-    housePrice: 9000, basis: '档位估算（中西部普通地级市）',
+    housePrice: 9000, basis: '档位估算（通用兜底，无一手数据）',
   },
 };
 

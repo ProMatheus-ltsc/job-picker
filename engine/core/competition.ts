@@ -260,15 +260,24 @@ export function competitionShort(level: CompetitionLevel): string {
 /**
  * 额外硬门槛：不是资格审查的 fail 项，但决定「你实际能不能报」。
  * （表里写在备注/职位简介，审核时按岗执行）
+ *
+ * ⚠️ 广东省考特有：**职位类型决定申论考哪张卷**，不是备注里的隐性门槛，
+ * 而是「加考一门没准备过的科目」这种量级的差异，必须当作门槛提示：
+ *   综合管理类   → 《申论》
+ *   行政执法类   → 《行政执法专业和申论》（多一门专业科目）
+ *   公安执法勤务 → 《公安专业和申论》
  */
 export function hardGates(job: Job): string[] {
   const txt = `${job.remark ?? ''} ${job.intro ?? ''}`;
+  const inst = String(job.institution ?? '');
   const g: string[] = [];
   if (/英语六级|六级|雅思|托福|大学英语|英语专业/.test(txt)) g.push('英语等级');
   if (/法律职业资格|司法考试|法考/.test(txt)) g.push('法考证书');
   if (/加试|专业能力测试|专业测试|业务水平测试/.test(txt)) g.push('加试专业');
   if (/限男性|限女性|男性|女性/.test(txt)) g.push('性别限制');
   if (/户籍|本地户口|生源/.test(txt)) g.push('户籍限制');
+  if (/行政执法类/.test(inst)) g.push('加考行政执法');
+  else if (/公安|执法勤务/.test(inst)) g.push('加考公安专业');
   return g;
 }
 

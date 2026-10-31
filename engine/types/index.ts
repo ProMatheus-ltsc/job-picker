@@ -159,6 +159,12 @@ export interface Profile {
   hasLegalCert: boolean;
   /** 是否应届毕业生 */
   fresh: boolean;
+  /**
+   * 性别（省考大量岗位写「男性 / 女性」硬性限定；留空 = 不判定）。
+   * 广东实测：广州+深圳 96 个初筛候选里有 8 个是「限女性」，
+   * 不判定就会被当成可报岗位推给男性考生。
+   */
+  gender: '' | '男' | '女';
 }
 
 /** 岗位记录（05 §3.4） */
@@ -255,6 +261,7 @@ export function emptyProfile(): Profile {
     politicalStatus: '',
     hasLegalCert: false,
     fresh: false,
+    gender: '',
   };
 }
 
