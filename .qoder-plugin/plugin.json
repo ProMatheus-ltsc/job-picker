@@ -1,0 +1,17 @@
+{
+  "name": "job-picker",
+  "displayName": "公考选岗",
+  "version": "0.1.0",
+  "description": "职位表筛选与资格审查；历年进面分与竞争度",
+  "skills": [
+    "."
+  ],
+  "agents": [],
+  "models": {
+    "default": "deepseek-v4.1-flash"
+  },
+  "workbuddy": {
+    "entrySkill": "job-picker",
+    "newSessionPerCall": true
+  }
+}
