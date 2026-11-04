@@ -18,6 +18,7 @@ import {
   type Result,
   type StandardFieldKey,
 } from '../types';
+import { minServiceYears } from './examMode';
 import { err, ok } from '../types';
 
 /** 列名归一化：去空白（含换行/全角空格），用于跨表匹配 */
@@ -158,6 +159,9 @@ export function buildJobs(
       institution: cell(mapping.institution).trim(),
       freshRequired: cell(mapping.freshRequired).trim(),
       physicalTest: cell(mapping.physicalTest).trim(),
+      // 来源 sheet：省考职位表按 6 类分表，sheet 名本身携带「乡镇机关 → 5 年服务期」这类信息
+      sourceSheet: String(raw.sheetName ?? '').trim(),
+      minServiceYears: minServiceYears(raw.sheetName),
       remark: remarkIdx
         .map((i) => {
           const v = String(row[i] ?? '').trim();

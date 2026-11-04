@@ -15,3 +15,6 @@ __pycache__/
 # 系统
 .DS_Store
 Thumbs.db
+
+# 测试产物（fixtures 入库，输出不入库）
+tests/out/

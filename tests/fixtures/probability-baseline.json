@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "note": "改造方案 §2.2 的 11 个候选岗基准样本。μ=67、σ=3.5；数值为方案给出的量级，用于验证实现与文档口径一致（±10%）。",
+  "mu": 67,
+  "sigma": 3.5,
+  "items": [
+    {"key": "从化民政", "unit": "广州市从化区民政局", "cutoffMin": 63.5, "cutoffMax": 67.5, "hires": 1, "applicants": 86},
+    {"key": "荔湾政数", "unit": "广州市荔湾区政务服务和数据管理局", "cutoffMin": 66.5, "cutoffMax": 70.5, "hires": 1, "applicants": 132},
+    {"key": "南沙发改", "unit": "广州市南沙区发展和改革局", "cutoffMin": 68.5, "cutoffMax": 72.5, "hires": 1, "applicants": 48},
+    {"key": "黄埔投促", "unit": "广州市黄埔区投资促进局", "cutoffMin": 69.0, "cutoffMax": 73.0, "hires": 1, "applicants": 210},
+    {"key": "天河财政", "unit": "广州市天河区财政局", "cutoffMin": 69.0, "cutoffMax": 73.0, "hires": 1, "applicants": 300},
+    {"key": "白云人社", "unit": "广州市白云区人力资源和社会保障局", "cutoffMin": 66.0, "cutoffMax": 70.0, "hires": 1, "applicants": 175},
+    {"key": "海珠卫健", "unit": "广州市海珠区卫生健康局", "cutoffMin": 65.5, "cutoffMax": 69.5, "hires": 1, "applicants": 160},
+    {"key": "番禺教育", "unit": "广州市番禺区教育局", "cutoffMin": 64.5, "cutoffMax": 68.5, "hires": 1, "applicants": 145},
+    {"key": "增城市监", "unit": "广州市增城区市场监督管理局", "cutoffMin": 63.0, "cutoffMax": 67.0, "hires": 2, "applicants": 120},
+    {"key": "光明发改", "unit": "深圳市光明区发展和改革局", "cutoffMin": 70.0, "cutoffMax": 74.0, "hires": 1, "applicants": 330},
+    {"key": "花都民政", "unit": "广州市花都区民政局", "cutoffMin": 63.0, "cutoffMax": 67.0, "hires": 2, "applicants": 110}
+  ]
+}

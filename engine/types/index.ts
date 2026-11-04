@@ -199,6 +199,13 @@ export interface Job {
   freshRequired: string;
   /** 是否体能测评原文（浙江独立列，取值「是/否」；广东/国考多为空） */
   physicalTest: string;
+  /**
+   * 来源 sheet 名（★ 省考职位表按 6 类分 sheet，如「乡镇机关」「公安机关」）。
+   * 国考单表时为空。该字段驱动「5 年最低服务期」判定，见 `core/examMode.ts`。
+   */
+  sourceSheet: string;
+  /** 最低服务年限（来源表=乡镇机关 → 5；未知来源表 → null，**不猜**） */
+  minServiceYears: number | null;
   remark: string;
   marks: MarkStatus[];
 }
