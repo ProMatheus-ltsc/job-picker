@@ -20,6 +20,7 @@
  * 荔湾 18–21 万 vs 南沙 25–27 万，被同一档完全抹掉，排序结论失真。
  */
 import type { Job } from '../types';
+import type { DataGrade } from './datagrade';
 
 export interface CitySalary {
   /** 展示名（市级名，区级档为「广州·南沙」这类） */
@@ -39,9 +40,19 @@ export interface CitySalary {
   housePrice: number;
   /** 数据来源 */
   basis: string;
+  /**
+   * 数据级别（与 `datagrade.ts` 的四级一致），由**匹配来源**决定：
+   * 区级 B / 省直 A / 市级 B / 层级兜底 C。
+   *
+   * 不能靠解析 basis 文本猜测：市级档的 basis 是「多来源调研汇总」，不含级别字样，
+   * 猜出来会变成 C（估算），而市级档实际有样本可核验（B）。
+   * 误判成 C 会让「C 级不进排序公式」这条规则名存实亡（MJ-06）。
+   */
+  grade: DataGrade;
 }
 
-type SalaryTier = Omit<CitySalary, 'city' | 'district'>;
+// grade 不在档位字面量里：由 estimateSalary 按匹配来源统一赋值（m-01）
+type SalaryTier = Omit<CitySalary, 'city' | 'district' | 'grade'>;
 
 /**
  * 市级档（未到区级时使用；按区域关键字模糊匹配）
@@ -242,9 +253,39 @@ function matchDistrict(region: string): { city: string; district: string; data: 
   return null;
 }
 
-/** 是否为省直岗位（省直机关名称里通常含「省」，且不含具体市辖区） */
+/**
+ * 是否为省直岗位（**仅广东**）。
+ *
+ * 判定必须同时满足，否则会误判：
+ *   ① 不含任何市级标识（市/州/区/县/街道/镇）——「广东省广州市某局」是最常见写法，
+ *      省级前缀 + 市级主体，误判成省直会把 18–25 万报成 20.7 万；
+ *   ② 要么含明确省级措辞（省直/省级/省属/省本级），要么是「广东省 + 机关后缀」；
+ *   ③ ★ 省直档（20.7–22.9 万）**只有广东有实测依据**（来自广东省直单位部门预算）。
+ *      其它省份没有对应数据，硬套会把「浙江省财政厅」标成「省直（驻广州）」——明显错误。
+ *      未收录省份一律回退市级/层级档，宁可粗也不编。
+ *
+ * 反例（必须判非省直）：「广东省广州市某局」「浙江省财政厅」「江苏省发展和改革委员会」
+ * 正例（应判省直）：「广东省财政厅」「广东省发展和改革委员会」「省直某单位」
+ */
 function isProvinceLevel(region: string): boolean {
-  return /省(?:直|级|属|本级)|省.*(?:厅|局|委|办)$/.test(region) && !/市.*区/.test(region);
+  const r = String(region ?? '').trim();
+  if (!r) return false;
+  // ① 市级标识的否定优先级最高
+  if (/[市州区县]|街道|镇/.test(r)) return false;
+
+  const explicitProvinceLevel = /省直|省级|省属|省本级/.test(r);
+  const guangdongProvinceUnit = /广东.{0,20}(?:厅|委员会|委|办公室|办|局|院|中心)$/.test(r);
+  if (!explicitProvinceLevel && !guangdongProvinceUnit) return false;
+
+  // ② 明确的省级措辞：若文本里出现**其它省名**，说明不是广东，拒绝套用广东档
+  if (explicitProvinceLevel) {
+    const otherProvince =
+      /(?:浙江|江苏|山东|河南|河北|山西|陕西|甘肃|青海|辽宁|吉林|黑龙江|安徽|福建|江西|湖北|湖南|四川|贵州|云南|海南|内蒙古|广西|西藏|宁夏|新疆|北京|上海|天津|重庆)/;
+    if (otherProvince.test(r) && !/广东/.test(r)) return false;
+    return true;
+  }
+  // ③「广东省 + 机关后缀」已是广东，直接放行
+  return true;
 }
 
 /**
@@ -264,35 +305,44 @@ function isProvinceLevel(region: string): boolean {
 export function estimateSalary(region: string): CitySalary & { precise: boolean } {
   const r = String(region ?? '');
 
-  // ① 区级（最高优先级）
+  // ① 区级（最高优先级）：B 级，有部门预算结构 + 同类区样本可核验
   const districtHit = matchDistrict(r);
   if (districtHit) {
     return {
       city: districtHit.city,
       district: districtHit.district,
       precise: true,
+      grade: 'B',
       ...districtHit.data,
     };
   }
 
-  // ② 省直（有预算反推的 A 级档）
+  // ② 省直：A 级，来自单位部门预算反推（一手）
   if (isProvinceLevel(r)) {
     const { label, ...tier } = PROVINCE_LEVEL_TIER;
-    return { city: label, district: '', precise: true, ...tier };
+    return { city: label, district: '', precise: true, grade: 'A', ...tier };
   }
 
-  // ③ 市级（区间是整市口径 → 不够细，precise=false）
+  // ③ 市级：B 级，有调研样本可核验（整市口径 → 不够细，precise=false）
   for (const v of VERIFIED) {
     if (r.includes(v.key)) {
-      return { city: v.key, district: '', precise: false, ...v.data };
+      return { city: v.key, district: '', precise: false, grade: 'B', ...v.data };
     }
   }
 
-  // ④ 层级兜底
+  // ④ 层级兜底：C 级，纯档位推断、无法核验（因此不得进排序公式）
   for (const t of TIERS) {
-    if (t.re.test(r)) return { city: t.label, district: '', precise: false, ...t.data };
+    if (t.re.test(r)) {
+      return { city: t.label, district: '', precise: false, grade: 'C', ...t.data };
+    }
   }
-  return { city: DEFAULT_TIER.label, district: '', precise: false, ...DEFAULT_TIER.data };
+  return {
+    city: DEFAULT_TIER.label,
+    district: '',
+    precise: false,
+    grade: 'C',
+    ...DEFAULT_TIER.data,
+  };
 }
 
 /** 展示名：有区级时带上区（「广州·南沙」），否则只有市/档位名 */

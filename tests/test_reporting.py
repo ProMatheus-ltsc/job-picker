@@ -21,7 +21,7 @@ def test_scope_notice_when_cities_given() -> None:
 
 
 def test_scope_notice_never_invents_numbers() -> None:
-    """无范围外统计时只给方向性描述 + 需重新抓取，��虚构岗位数字。"""
+    """无范围外统计时只给方向性描述 + 需重新抓取，不虚构岗位数字。"""
     require_tsx()
     result = probe("scope", {"cities": ["广州"], "inScopeTotal": 12})
     text = result["text"]

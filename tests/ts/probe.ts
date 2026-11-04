@@ -58,6 +58,7 @@ try {
           payMax: s.payMax,
           mid: salaryMidpoint(s),
           precise: s.precise,
+          grade: s.grade,
         };
       });
       process.stdout.write(
@@ -70,6 +71,7 @@ try {
           payMax: est.payMax,
           mid: salaryMidpoint(est),
           precise: est.precise,
+          grade: est.grade,
           basis: est.basis,
           table,
         }),

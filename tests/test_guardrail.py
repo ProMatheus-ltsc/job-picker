@@ -1,13 +1,17 @@
 """TC-019 / TC-020：护栏用例（测试分支只读、受保护路径不可改）。
 
-TC-019 的判定口径：测试期间测试分支**不得有提交、不得 push**。
-本仓库的测试全部在工作区只读执行（不产生提交），因此断言"无新提交 + 未 push"。
+TC-019 的语义是「**测试过程本身不产生提交、不 push**」。
+这里在模块导入时记录 HEAD 与分支，用例断言它们未变——
+这才是对「测试不改写仓库」的真实断言。只检查 commit message 里有没有 "test"
+是弱断言（谁都能绕开），CR 指出过这一点。
 """
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,6 +22,9 @@ PROTECTED = [
     "references/interview-scores-2026-tax-yue-zhe-shan.csv",
     "references/tax-scores-yoy-2025-2026.md",
 ]
+
+_HEAD_AT_IMPORT = None
+_BRANCH_AT_IMPORT = None
 
 
 def git(*args: str) -> subprocess.CompletedProcess:
@@ -31,6 +38,16 @@ def git(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+def _snapshot() -> None:
+    global _HEAD_AT_IMPORT, _BRANCH_AT_IMPORT
+    if _HEAD_AT_IMPORT is None:
+        _HEAD_AT_IMPORT = git("rev-parse", "HEAD").stdout.strip()
+        _BRANCH_AT_IMPORT = git("branch", "--show-current").stdout.strip()
+
+
+_snapshot()
+
+
 def base_ref() -> str | None:
     for ref in ("main", "origin/main", "master", "origin/master"):
         proc = git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
@@ -39,31 +56,27 @@ def base_ref() -> str | None:
     return None
 
 
-def test_no_commits_on_test_branch() -> None:
-    """TC-019：测试执行期间没有产生新的提交。"""
-    base = base_ref()
-    if base is None:
-        import pytest
+def test_head_unchanged_during_tests() -> None:
+    """TC-019：测试执行期间 HEAD 未变（证明测试进程没有提交）。"""
+    _snapshot()
+    current = git("rev-parse", "HEAD").stdout.strip()
+    assert current, "无法读取 HEAD"
+    assert current == _HEAD_AT_IMPORT, (
+        f"测试期间 HEAD 变了：{_HEAD_AT_IMPORT} → {current}（测试不得提交）"
+    )
 
-        pytest.skip("无 main/origin 基线，跳过（浅克隆环境）")
 
-    head = git("rev-parse", "HEAD").stdout.strip()
-    # 测试自身不提交：HEAD 必须仍然指向交付分支的提交，
-    # 且工作区 diff 中不得出现「测试提交」这种非交付内容。
-    assert head, "无法读取 HEAD"
-
-    # 关键断言：本次测试运行没有新增 git 提交（测试进程从不调用 git commit）
-    log = git("log", "--oneline", "-5").stdout
-    assert "test commit" not in log.lower()
-    assert "临时测试" not in log
+def test_branch_unchanged_during_tests() -> None:
+    """TC-019：测试没有切换分支（未创建测试分支）。"""
+    _snapshot()
+    current = git("branch", "--show-current").stdout.strip()
+    assert current == _BRANCH_AT_IMPORT, (current, _BRANCH_AT_IMPORT)
 
 
 def test_test_branch_not_pushed() -> None:
-    """TC-019：没有 push 测试分支（远端不存在 test/PRJ-2026-022-* 引用）。"""
+    """TC-019：远端不存在 test/PRJ-2026-022-* 引用（测试分支从未 push）。"""
     proc = git("ls-remote", "--heads", "origin", "test/PRJ-2026-022-*")
     if proc.returncode != 0:
-        import pytest
-
         pytest.skip(f"无法访问远端（离线环境）: {(proc.stderr or '').strip()[:120]}")
     refs = [line for line in (proc.stdout or "").splitlines() if line.strip()]
     assert not refs, f"远端存在测试分支引用: {refs}"
@@ -73,8 +86,6 @@ def test_guard_whitelist_unchanged() -> None:
     """TC-020：_guard.py 的官方域名白名单未被修改。"""
     base = base_ref()
     if base is None:
-        import pytest
-
         pytest.skip("无基线分支，跳过")
     proc = git("diff", "--name-only", base, "--", PROTECTED[0])
     assert proc.returncode == 0, proc.stderr
@@ -86,8 +97,6 @@ def test_archived_hand_data_unchanged() -> None:
     """TC-020：已归档的一手 CSV/MD 数据未被篡改。"""
     base = base_ref()
     if base is None:
-        import pytest
-
         pytest.skip("无基线分支，跳过")
     proc = git("diff", "--name-only", base, "--", *PROTECTED[1:])
     assert proc.returncode == 0, proc.stderr
@@ -116,3 +125,11 @@ def test_no_generated_artifacts_committed() -> None:
     assert proc.returncode == 0, proc.stderr
     tracked = [line for line in proc.stdout.splitlines() if line.strip()]
     assert not tracked, f"测试产物被跟踪: {tracked}"
+
+
+def test_worktree_clean_of_test_artifacts() -> None:
+    """测试产物不得出现在 git status 的未跟踪列表里（已被 .gitignore 覆盖）。"""
+    proc = git("status", "--porcelain", "-uall", "tests/out")
+    assert proc.returncode == 0, proc.stderr
+    entries = [line for line in proc.stdout.splitlines() if line.strip()]
+    assert not entries, f"tests/out 未被忽略: {entries[:5]}"

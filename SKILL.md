@@ -203,9 +203,23 @@ P(进面) ≈ P(笔试分 ≥ 该岗进面线) × 进面名额 ÷ 报名人数
 
 ```bash
 npx tsx scripts/pick.ts --jobs 职位表.xlsx --exam-type sk --cities 广州,深圳 \
+  --profile assets/profile.md \
   --mu 67 --sigma 3.5 --cutoff 65,70 \
+  --applicants 报名人数.json \
   --json out.json --report-out report.md --scatter-out scatter.html
 ```
+
+| 参数 | 作用 | 说明 |
+|---|---|---|
+| `--exam-type gk\|sk` | 国考 / 省考数据链 | 非法或缺值退出码 2，不静默回退 |
+| `--cities 广州,深圳` | 目标城市（模糊匹配） | 同时触发**范围外提示**；不填 = 全量分析 |
+| `--profile assets/profile.md` | **画像文件** | 读强度偏好（接受值班/应急/执法）、排除区、最低年薪、接受服务期，也读学历/专业/城市/基层/政治面貌/法考/应届；CLI 显式参数优先于画像 |
+| `--mu` / `--sigma` | 笔试基线与整卷波动（**C 级**） | 不填则不算概率，输出「—」而非 0 |
+| `--cutoff 65,70` | 进面线区间 | 国考取官方名单（A 级），省考为区级代理（C 级） |
+| `--applicants 文件` | **报名人数**（一手 A 级） | JSON（`{"职位代码": 人数}`）或 CSV（`code,applicants`）；回填后概率才可算 |
+| `--keep-heavy` | 保留全部 heavy 岗位 | 调试用；正常应通过画像「接受某类强度」精准放行 |
+| `--report-out` | Markdown 报告 | 五段式 + 口径声明 + 范围外提示 |
+| `--scatter-out` | 单文件 HTML 散点图 | 纵轴对数；概率未计算与概率为 0 分开标记 |
 
 ---
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from helpers import fixture, probe, require_tsx, run_cli
 
 
-def test_township_has_five_year_bond() -> None:
+def test_township_service_years() -> None:
     """TC-005：来源表=乡镇机关 → minServiceYears=5；其他来源表 → null。"""
     require_tsx()
     cases = [

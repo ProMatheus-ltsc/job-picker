@@ -23,7 +23,12 @@ import { estimateSalary, salaryLabel, salaryMidpoint, yearsForHousing, type City
 import { scanIntensity, type IntensityResult } from './intensity';
 import { estimateProbability, type ProbabilityInput, type ProbabilityResult } from './probability';
 import { nonDominated, type ParetoResult } from './pareto';
-import type { ExamType } from './examMode';
+import {
+  GK_CUTOFF_SOURCE,
+  SK_CUTOFF_SOURCE,
+  cutoffGrade,
+  type ExamType,
+} from './examMode';
 
 export interface RegionStat {
   region: string;
@@ -76,10 +81,21 @@ export interface SelectionReport {
   candidates: Job[];
   /** 因工作强度被排除的岗位（heavy） */
   excludedByIntensity: Array<{ job: Job; intensity: IntensityResult }>;
+  /** 因画像偏好被排除的岗位（排除区/最低年薪/不接受服务期/不接受某类强度） */
+  excludedByPreference?: Array<{ job: Job; reasons: string[] }>;
   /** 综合排序（推荐指数降序；含无门槛的排在前） */
   ranked: RankedCandidate[];
   /** 帕累托前沿（薪酬 × 概率） */
   pareto: ParetoResult;
+}
+
+/** 该岗位命中的 heavy 类别是否**全部**已被画像接受（全部接受才放行） */
+function allAccepted(intensity: IntensityResult, accepted: Set<string>): boolean {
+  const heavyHits = intensity.hits.filter((hit) =>
+    ['duty', 'enforce', 'emergency'].includes(hit.category),
+  );
+  if (!heavyHits.length) return false;
+  return heavyHits.every((hit) => accepted.has(hit.category));
 }
 
 const TOP_N = 12;
@@ -114,10 +130,20 @@ export interface BuildReportOptions extends Partial<ProbabilityContext> {
    * 设为 true 时，强度等级进入候选并在报告中标注，用于"我就想看看有哪些值班岗"的场景。
    */
   keepHeavy?: boolean;
+  /**
+   * 画像明确接受的强度类别（如用户说"接受值班"→ ['duty']）。
+   *
+   * 这些类别命中的岗位仍会在结果里标注 `intensity.level='heavy'`，
+   * 但**不因该类别被排除**——因为用户已经明确接受它。
+   * 与 `keepHeavy` 的区别：keepHeavy 是"全部保留"（调试用），
+   * acceptedCategories 是"只放行我接受的类别"，其余类别照常排除。
+   */
+  acceptedCategories?: string[];
 }
 
 /** 按岗位组装概率输入 */
 function probabilityInputFor(job: Job, ctx: BuildReportOptions): ProbabilityInput {
+  const examType = ctx.examType ?? 'gk';
   return {
     mu: ctx.mu ?? null,
     sigma: ctx.sigma ?? null,
@@ -126,6 +152,9 @@ function probabilityInputFor(job: Job, ctx: BuildReportOptions): ProbabilityInpu
     hires: job.hires ?? null,
     interviewRatio: ctx.interviewRatio ?? 3,
     applicants: job.applicants ?? null,
+    // ★ 进面线级别必须随考试类型走，否则国考会显示 A 级概率却标 C 级线（CRITICAL）
+    cutoffGrade: cutoffGrade(examType),
+    cutoffSource: examType === 'sk' ? SK_CUTOFF_SOURCE : GK_CUTOFF_SOURCE,
   };
 }
 
@@ -143,6 +172,7 @@ export function buildSelectionReport(
   const cities = profile.targetCities ?? [];
   const scope = cities.length ? jobs.filter((j) => inTargetCity(j.region, cities)) : jobs.slice();
   const examType: ExamType = options.examType ?? 'gk';
+  const accepted = new Set(options.acceptedCategories ?? []);
 
   const failMap = new Map<string, number>();
   const riskMap = new Map<string, number>();
@@ -168,10 +198,10 @@ export function buildSelectionReport(
       rs.pass += 1;
       scanRisks(j).forEach((t) => bump(riskMap, t));
 
-      // ★ P0-3 强度筛查：heavy 直接排除（除非显式 keepHeavy）
+      // ★ P0-3 强度筛查：heavy 直接排除（除非显式 keepHeavy，或该类别已被画像接受）
       const intensity = scanIntensity(j);
       intensity.hits.forEach((h) => bump(intensityMap, `${h.category}:${h.kw}`));
-      if (intensity.level === 'heavy' && !options.keepHeavy) {
+      if (intensity.level === 'heavy' && !options.keepHeavy && !allAccepted(intensity, accepted)) {
         excludedByIntensity.push({ job: j, intensity });
         regionAgg.set(rk, rs);
         continue;

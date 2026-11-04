@@ -164,7 +164,7 @@ def headcount_range(subjects: Dict[str, Any], explicit: Optional[int] = None) ->
     low = int(sections) * STAFF_PER_SECTION[0] + LEADERS[0]
     high = int(sections) * STAFF_PER_SECTION[1] + LEADERS_COUNTED_AT_MAX
     return low, high, (
-        f"内设机构 {int(sections)} 个 × 每科室 3~4 人 + 局领导 3~{LEADERS_COUNTED_AT_MAX} 人"
+        f"内设机构 {int(sections)} 个 × 每科室 {STAFF_PER_SECTION[0]}~{STAFF_PER_SECTION[1]} 人 "f"+ 额外领导编制 {LEADERS_COUNTED_AT_MAX} 人（上限口径避免与科室负责人重复计数）"
     )
 
 
@@ -379,7 +379,13 @@ def render_markdown(result: Dict[str, Any], unit: str) -> str:
 
 
 def load_subjects(args) -> Tuple[Dict[str, Any], str]:
-    """读取科目：--json-input 优先；否则 --pdf 抽取。"""
+    """读取科目：--json-input 优先，其次 --pdf，再其次 --html。
+
+    三种入口对应三种现实场景：
+    - `--json-input`：没有 pdfplumber 时的手工入口（零第三方依赖）；
+    - `--pdf`：单位官网发布的预算 PDF（需 pdfplumber）；
+    - `--html`：单位官网发布的预算网页（标准库即可解析，无需第三方）。
+    """
     if args.json_input:
         path = Path(args.json_input)
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -389,15 +395,20 @@ def load_subjects(args) -> Tuple[Dict[str, Any], str]:
         subjects = {k: v for k, v in subjects.items() if k not in {"unit", "subjects"}}
         return subjects, unit
 
+    if args.html:
+        path = Path(args.html)
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        return extract_subjects_from_text(strip_html(raw)), args.unit or path.stem
+
     if not args.pdf:
-        raise argparse.ArgumentTypeError("必须提供 --json-input 或 --pdf")
+        raise argparse.ArgumentTypeError("必须提供 --json-input、--pdf 或 --html")
 
     try:
         import pdfplumber  # type: ignore
     except ImportError as error:
         raise ImportError(
             "缺少 pdfplumber，无法解析 PDF：pip install pdfplumber\n"
-            "或改用 --json-input 手工录入科目（无第三方依赖）"
+            "或改用 --json-input 手工录入科目 / --html 直接解析网页（均无第三方依赖）"
         ) from error
 
     text_parts: List[str] = []
@@ -406,6 +417,25 @@ def load_subjects(args) -> Tuple[Dict[str, Any], str]:
             text_parts.append(page.extract_text() or "")
     text = "\n".join(text_parts)
     return extract_subjects_from_text(text), args.unit or Path(args.pdf).stem
+
+
+def strip_html(raw: str) -> str:
+    """把 HTML 压成纯文本（表格单元格之间留空格，保留行结构）。
+
+    只用标准库：预算是静态表格页，不需要浏览器解析；标签一律剥离，
+    `&nbsp;` 等常见实体换成空格，避免金额与科目名粘连导致抽取失败。
+    """
+    text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
+    text = re.sub(r"(?i)</t[dh]>", "\t", text)
+    text = re.sub(r"(?i)</tr>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    replacements = {
+        "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">",
+        "&quot;": '"', "&#39;": "'", "&yen;": "元",
+    }
+    for entity, char in replacements.items():
+        text = text.replace(entity, char)
+    return re.sub(r"[ \u3000]+", " ", text)
 
 
 def extract_subjects_from_text(text: str) -> Dict[str, Any]:
@@ -428,6 +458,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="部门预算 → 人均应发与年全包区间（双路径反推）",
     )
     parser.add_argument("--pdf", help="部门预算 PDF 路径")
+    parser.add_argument("--html", help="部门预算网页（HTML）路径；无需第三方依赖")
     parser.add_argument("--json-input", help="已抽取的科目录 JSON（无 pdfplumber 时的降级入口）")
     parser.add_argument("--unit", default="", help="单位名称（报告标题用）")
     parser.add_argument("--headcount", type=int, default=None, help="显式在职人数（覆盖结构推算）")

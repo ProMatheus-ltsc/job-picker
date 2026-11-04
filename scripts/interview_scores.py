@@ -381,8 +381,9 @@ def parse_one(path: str) -> list[dict]:
     for sn in xl.sheet_names:
         try:
             raw = xl.parse(sn, header=None, dtype=str)
-        except (ValueError, KeyError, IndexError):
-            # 单个 sheet 读不了就跳过，不影响其余 sheet（如空 sheet、格式异常 sheet）
+        except (ValueError, KeyError, IndexError, TypeError, OSError):
+            # 单个 sheet 读不了就跳过，不影响其余 sheet（空 sheet、格式异常 sheet、
+            # 引擎异常等都不该毁掉整次解析）
             continue
         if raw.empty:
             continue

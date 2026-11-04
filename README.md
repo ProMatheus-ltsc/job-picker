@@ -72,7 +72,9 @@ npx tsx scripts/pick.ts --jobs ./raw/广东省考职位表.xlsx \
 |---|---|
 | `--exam-type gk\|sk` | 国考 / 省考数据链；非法值退出码 2 |
 | `--cities 广州,深圳` | 目标城市（模糊匹配），同时触发**范围外提示** |
+| `--profile assets/profile.md` | 画像文件：强度偏好 / 排除区 / 最低年薪 / 接受服务期 + 学历专业等硬条件 |
 | `--mu` / `--sigma` | 笔试基线与整卷波动（C 级）；不填则不算概率 |
+| `--applicants 文件` | 报名人数（一手 A 级，JSON 或 CSV）；回填后概率才可算 |
 | `--cutoff 65,70` | 进面线区间（省考为区级代理，C 级） |
 | `--keep-heavy` | 保留被判 heavy 的值班/执法/应急岗（默认排除） |
 | `--report-out` | Markdown 报告（五段式 + 口径声明 + 范围外提示） |

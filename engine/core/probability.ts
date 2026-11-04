@@ -18,7 +18,7 @@
  *    说明「分数达标前，选岗的边际收益极小」。
  */
 
-import { requireUsable, type GradedValue } from './datagrade';
+import { requireUsable, weakest, type DataGrade, type GradedValue } from './datagrade';
 
 export interface ProbabilityInput {
   /** 笔试折算基线（C 级：用户自报或模考统计） */
@@ -35,6 +35,18 @@ export interface ProbabilityInput {
   interviewRatio?: number | null;
   /** 报名人数（官方报名期唯一一手数据） */
   applicants: number | null;
+  /**
+   * 进面线的数据级别（由调用方按考试类型决定）：
+   * - 国考税务：进面分取自招录机关面试公告附件 → A；
+   * - 省考：官方不公布逐岗线，只能用区级/层级代理 → C。
+   *
+   * 默认 C（保守）：没显式声明来源就是不可验证的推算。
+   * ★ 这个字段是 CRITICAL 指出的问题：原先硬编码 C，导致国考下出现
+   * cutoffGrade=C 与 proxyGrade=A 并存、报告前后不一致。
+   */
+  cutoffGrade?: DataGrade;
+  /** 进面线来源说明（报告口径声明直接引用） */
+  cutoffSource?: string;
 }
 
 export interface ProbabilityResult {
@@ -54,8 +66,21 @@ export interface ProbabilityResult {
   magnitudeWarning: string | null;
   /** 缺失的输入项名称（非空表示结论不可用） */
   missingInputs: string[];
-  /** 进面线的数据级别（省考通常为 C） */
+  /** 进面线的数据级别（国考 A / 省考 C） */
   cutoffGraded: GradedValue | null;
+  /**
+   * **概率整体**的数据级别（由各输入取最保守者合成）。
+   *
+   * 为什么不等于 cutoffGrade：概率 = f(进面线, μ, σ, 名额, 报名人数)，
+   * 只要有一项是估算，整体就不能标成一手。
+   * 例：国考进面线 A 级 + μ/σ 用户自报 C 级 → 概率整体 C 级。
+   * 把概率直接标成 A 会让报告的数据分级段与数据表互相矛盾。
+   */
+  probabilityGrade: DataGrade;
+  /** 合成级别时各输入的级别明细（便于报告解释"为什么是 C"） */
+  gradeInputs: Array<{ input: string; grade: DataGrade }>;
+  /** 原始概率是否被 1 截断（进面名额 >= 报名人数时会发生） */
+  capped?: boolean;
 }
 
 /** 标准正态分布累积分布函数 Φ(x)（Abramowitz–Stegun 7.1.26 误差函数近似，精度 ~1e-7） */
@@ -118,6 +143,8 @@ export function estimateProbability(input: ProbabilityInput): ProbabilityResult 
     magnitudeWarning: null,
     missingInputs: missing,
     cutoffGraded: null,
+    probabilityGrade: 'C',
+    gradeInputs: [],
   };
   if (missing.length) return base;
 
@@ -132,16 +159,23 @@ export function estimateProbability(input: ProbabilityInput): ProbabilityResult 
   }
 
   const pHit = hitProbability(midLine, mu, sigma);
-  const p = (pHit * quota) / applicants;
-  const pAtMinLine = (hitProbability(cutoffMin, mu, sigma) * quota) / applicants;
-  const pAtMaxLine = (hitProbability(cutoffMax, mu, sigma) * quota) / applicants;
+  // 概率本质上界是 1：进面名额可能多于报名人数（招 2 人 x 1:3 = 6 个名额，
+  // 但只有 3 人报名时公式会算出 200%——数学上无意义）。
+  // 这里截断为 1，并用 capped 标记让调用方能解释「为什么恰好是 100%」。
+  const rawP = (pHit * quota) / applicants;
+  const p = Math.min(1, rawP);
+  const pAtMinLine = Math.min(1, (hitProbability(cutoffMin, mu, sigma) * quota) / applicants);
+  const pAtMaxLine = Math.min(1, (hitProbability(cutoffMax, mu, sigma) * quota) / applicants);
 
-  // 进面线本身多为推算/二手：省考官方只公布合格线，逐岗线不存在 → 按 C 级标注（只读方向）
+  // 进面线的级别由调用方声明（国考 A / 省考 C），默认 C（保守）。
+  // 用 display 用途校验：允许 C 级进报告，但 C 级不得进排序公式（由 datagrade 把关）。
+  // 未声明来源时按 C 级（推算/机构整理）处理——这是保守默认：
+  // 调用方没有显式声明来源，就不能假定它是一手数据。
   const cutoffGraded = requireUsable(
     midLine,
-    'C',
+    input.cutoffGrade ?? 'C',
     'display',
-    '省考/国考逐岗进面线为推算或机构整理，官方不公布逐岗线',
+    input.cutoffSource ?? '逐岗进面线未声明来源（按推算处理，级别 C）',
   );
 
   let warning: string | null = null;
@@ -149,6 +183,17 @@ export function estimateProbability(input: ProbabilityInput): ProbabilityResult 
     warning =
       '概率低于 0.1%：分数达标之前，选岗的边际收益极小——此时应优先提分而非纠结岗位。';
   }
+
+  // ★ 概率整体级别 = 各输入级别里最保守的那个。
+  // μ/σ 固定 C（用户自报或主观给定）；报名人数有值即 A（官方报名期唯一一手）；
+  // 进面线按考试类型（国考 A / 省考 C）。任一为 C，整体就是 C。
+  const gradeInputs: Array<{ input: string; grade: DataGrade }> = [
+    { input: '进面线', grade: cutoffGraded.grade },
+    { input: '笔试基线 μ', grade: 'C' },
+    { input: '整卷波动 σ', grade: 'C' },
+    { input: '报名人数', grade: applicants > 0 ? 'A' : 'C' },
+  ];
+  const probabilityGrade = weakest(...gradeInputs.map((item) => item.grade));
 
   return {
     p,
@@ -160,6 +205,9 @@ export function estimateProbability(input: ProbabilityInput): ProbabilityResult 
     magnitudeWarning: warning,
     missingInputs: [],
     cutoffGraded,
+    probabilityGrade,
+    gradeInputs,
+    capped: rawP > 1,
   };
 }
 

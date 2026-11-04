@@ -57,6 +57,12 @@ export interface CaliberStatement {
   cutoffSource: string;
   /** 进面线级别 */
   cutoffGrade: DataGrade;
+  /**
+   * **概率整体**级别（weakest 合成）。
+   * 与 cutoffGrade 分开：国考线是 A 级，但只要 μ/σ 是 C 级，概率整体就是 C 级。
+   * 报告的「仅作方向筛选」声明按这个字段判断，而不是按进面线级别。
+   */
+  probabilityGrade?: DataGrade;
   /** 误差范围描述 */
   tolerance: string;
 }
@@ -86,7 +92,7 @@ function cell(text: string | number | null): string {
 
 /** 结论段：一句话推荐 + 是否值得纠结 */
 function renderConclusion(input: ReportInput): string {
-  const { pareto, rows, magnitudeWarning } = input;
+  const { pareto, rows, magnitudeWarning, caliber } = input;
   const lines: string[] = ['## 结论', ''];
   if (!rows.length) {
     lines.push('**无符合条件的候选岗位。** 请检查画像参数、目标城市与强度筛选口径。');
@@ -95,6 +101,29 @@ function renderConclusion(input: ReportInput): string {
   const frontier = pareto.frontier
     .map((p) => rows.find((r) => r.code === p.key)?.label ?? p.key)
     .filter(Boolean);
+
+  // ★ 关键区分：全部被 excluded 说明「缺少概率轴，算不了」，不能写成「0 个前沿点」。
+  // 后者会把"不知道"伪造成"没有更优岗"，是本项目最典型的错误输出。
+  const analyzed = frontier.length + pareto.dominated.length;
+  if (!analyzed) {
+    lines.push(
+      `本次 ${rows.length} 个候选岗位**未做帕累托前沿分析**：缺少两轴数据（` +
+        `${pareto.excluded.length} 个岗位因缺薪酬或概率被排除）。`,
+    );
+    lines.push('');
+    lines.push(
+      '这不是"没有更优岗"，而是**算不了**。要得到前沿结论，请补上进面概率所需的输入' +
+        '（`--mu` / `--sigma` / 报名人数）。',
+    );
+    lines.push('');
+    if (magnitudeWarning) {
+      lines.push(`> ⚠️ ${magnitudeWarning}`);
+      lines.push('');
+    }
+    lines.push('**当前可依据的结论**：只能按薪酬区间与竞争度排序，不能判断"值不值得纠结"。');
+    return lines.join('\n');
+  }
+
   lines.push(
     `在 ${rows.length} 个候选岗位中，**${frontier.length} 个位于帕累托前沿**（薪酬与进面概率两轴都不被支配）：` +
       `${frontier.length ? frontier.map((f) => `**${f}**`).join('、') : '无'}。`,
@@ -102,6 +131,10 @@ function renderConclusion(input: ReportInput): string {
   lines.push('');
   if (pareto.dominated.length) {
     lines.push(`另有 ${pareto.dominated.length} 个岗位被支配（没有理由选它）：${paretoSummary(pareto)}。`);
+    lines.push('');
+  }
+  if (pareto.excluded.length) {
+    lines.push(`另有 ${pareto.excluded.length} 个岗位因缺轴未参与两轴比较（不影响上述结论）。`);
     lines.push('');
   }
   if (magnitudeWarning) {
@@ -112,6 +145,26 @@ function renderConclusion(input: ReportInput): string {
     '**是否值得纠结**：若前沿点之间的概率差异不足一个数量级，薪酬差异应作为主要决策依据；' +
       '若概率差异超过 10 倍，优先选概率高的（薪酬差距在几年内可以用稳定性换回来）。',
   );
+  // ★ 只要概率轴不是 A 级（即概率含估算成分），就必须声明"仅作方向筛选"。
+  // 原先只看 cutoffGrade==='C'，国考（线是 A 级但 μ/σ 是 C 级）就漏了声明（MJ-04）。
+  if (caliber.probabilityGrade && caliber.probabilityGrade !== 'A') {
+    lines.push('');
+    // 原因要按实际情况写：国考的线是官方 A 级，但 μ/σ 仍是用户自报的 C 级，
+    // 写死「省考无官方逐岗线」在国考报告里就是错误陈述。
+    const grade = caliber.probabilityGrade;
+    const reason =
+      caliber.cutoffGrade === 'C'
+        ? '进面线本身是 C 级代理（官方不公布逐岗线），且 μ/σ 为自报值'
+        : '进面线虽取自官方（A 级），但 μ/σ 为用户自报（C 级），概率整体仍是估算';
+    lines.push(
+      '> ⚠️ 概率整体为 **' +
+        grade +
+        ' 级**（' +
+        reason +
+        '）。帕累托前沿在此仅作**方向筛选**（剔除两轴都不优的岗），' +
+        '不参与任何综合得分计算。前沿内部的先后顺序不代表优劣。',
+    );
+  }
   return lines.join('\n');
 }
 

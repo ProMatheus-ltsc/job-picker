@@ -55,15 +55,23 @@ export const SOURCE_SHEET_SERVICE_YEARS: Record<string, number | null> = {
   乡镇: 5,
 };
 
-/** 来源表 → 最低服务年限；未知来源表返回 null（不猜） */
+/**
+ * 来源表 → 最低服务年限；未知来源表返回 null（不猜）。
+ *
+ * 真实职位表的 sheet 名几乎都带前缀（「附件1：乡镇机关职位表」「附件2-县以上机关」），
+ * 因此不能要求精确相等。这里按**最长匹配**取值：
+ * 「附件1：乡镇机关职位表」同时包含「乡镇」与「乡镇机关」，取更长的「乡镇机关」，
+ * 避免因为命中两个别名而放弃判定（那是把"已知"退化成"未知"）。
+ */
 export function minServiceYears(sourceSheet: string | null | undefined): number | null {
   const key = String(sourceSheet ?? '').trim();
   if (!key) return null;
   if (key in SOURCE_SHEET_SERVICE_YEARS) return SOURCE_SHEET_SERVICE_YEARS[key];
-  // sheet 名常带前缀（如「附件1：乡镇机关职位表」），做包含匹配但只在唯一命中时采用
-  const matched = Object.keys(SOURCE_SHEET_SERVICE_YEARS).filter((name) => key.includes(name));
-  if (matched.length === 1) return SOURCE_SHEET_SERVICE_YEARS[matched[0]];
-  return null;
+  const matched = Object.keys(SOURCE_SHEET_SERVICE_YEARS)
+    .filter((name) => key.includes(name))
+    .sort((a, b) => b.length - a.length);
+  if (!matched.length) return null;
+  return SOURCE_SHEET_SERVICE_YEARS[matched[0]];
 }
 
 /** 该岗位是否受「5 年最低服务期」约束 */

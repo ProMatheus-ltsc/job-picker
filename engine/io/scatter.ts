@@ -96,16 +96,25 @@ export function renderScatterHtml(points: ScatterPoint[], title = '薪酬 × 进
     .map((p) => {
       const x = xOf(p.salaryMid as number);
       const isZero = p.probability === 0;
-      const y = isZero ? PAD.top + PLOT_H : yOf((p.probability ?? axisLow) as number);
+      // ★ 概率为 null（未计算）与概率为 0（确定没希望）是两回事，不能画在同一位置：
+      // null 用空心灰点 + 顶部标注区，0 用轴底虚线圆。混在一起等于把"不知道"当成"最低"。
+      const isUnknown = p.probability == null;
+      const y = isUnknown
+        ? PAD.top + 10
+        : isZero
+          ? PAD.top + PLOT_H
+          : yOf(p.probability as number);
       const r = rOf(p.ratio);
-      const color = colorOf(p.city);
+      const color = isUnknown ? '#9ca3af' : colorOf(p.city);
       const tip = `${p.label}｜薪酬 ${(p.salaryMid as number).toFixed(1)} 万｜概率 ${
-        p.probability == null ? '未计算' : p.probability === 0 ? '0' : p.probability.toExponential(2)
+        isUnknown ? '未计算' : isZero ? '0' : (p.probability as number).toExponential(2)
       }｜竞争比 ${p.ratio == null ? '—' : `${Math.round(p.ratio)}:1`}`;
       return [
         `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}"`,
-        ` fill-opacity="${isZero ? 0.35 : 0.6}" stroke="${color}" stroke-width="1.4"`,
-        ` stroke-dasharray="${isZero ? '3 2' : '0'}"><title>${esc(tip)}</title></circle>`,
+        ` fill-opacity="${isUnknown ? 0.12 : isZero ? 0.35 : 0.6}" stroke="${color}" stroke-width="1.4"`,
+        ` stroke-dasharray="${isUnknown ? '2 3' : isZero ? '3 2' : '0'}"`,
+        ` data-probability="${isUnknown ? 'unknown' : isZero ? 'zero' : 'value'}">` +
+          `<title>${esc(tip)}</title></circle>`,
       ].join('');
     })
     .join('\n    ');
@@ -121,7 +130,9 @@ export function renderScatterHtml(points: ScatterPoint[], title = '薪酬 × 进
   const xTicks = [0, 0.25, 0.5, 0.75, 1]
     .map((frac) => {
       const salary = salaryMin + (salaryMax - salaryMin) * frac;
-      const x = PAD.left + frac * PLOT_W;
+      // ★ 刻度必须复用气泡的 x 映射（xOf 内部有 7% 内边距），
+      // 否则刻度与点整体错位（CR 指出过）。
+      const x = xOf(salary);
       return `<text x="${x.toFixed(1)}" y="${PAD.top + PLOT_H + 20}" text-anchor="middle" font-size="10.5" fill="#6b7280">${salary.toFixed(1)}</text>`;
     })
     .join('');
@@ -134,11 +145,24 @@ export function renderScatterHtml(points: ScatterPoint[], title = '薪酬 × 进
     })
     .join('\n    ');
 
-  const skippedNote = skipped.length
-    ? `<p class="note">${skipped.length} 个岗位因缺少薪酬数据未绘制：${skipped
-        .map((p) => esc(p.label))
-        .join('、')}</p>`
-    : '';
+  const unknownCount = usable.filter((p) => p.probability == null).length;
+  const zeroCount = usable.filter((p) => p.probability === 0).length;
+
+  const skippedNote = [
+    skipped.length
+      ? `<p class="note">${skipped.length} 个岗位因缺少薪酬数据未绘制：${skipped
+          .map((p) => esc(p.label))
+          .join('、')}</p>`
+      : '',
+    unknownCount
+      ? `<p class="note">${unknownCount} 个岗位的进面概率**未计算**（缺 μ/σ 或报名人数），以灰虚线空心点绘制在顶部——这不表示概率为 0。</p>`
+      : '',
+    zeroCount
+      ? `<p class="note">${zeroCount} 个岗位的概率为 <b>0</b>（达到进面线的概率极低），以轴底虚线圆绘制。</p>`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -170,6 +194,8 @@ export function renderScatterHtml(points: ScatterPoint[], title = '薪酬 × 进
     ${bubbles}
     ${legend}
     <text x="${PAD.left + PLOT_W + 14}" y="${PAD.top + 18 + cities.length * 20 + 8}" font-size="10.5" fill="#6b7280">气泡 = 竞争比</text>
+    <text x="${PAD.left + PLOT_W + 14}" y="${PAD.top + 18 + cities.length * 20 + 26}" font-size="10.5" fill="#6b7280">灰虚线 = 概率未计算（不等于 0）</text>
+    <text x="${PAD.left + PLOT_W + 14}" y="${PAD.top + 18 + cities.length * 20 + 44}" font-size="10.5" fill="#6b7280">轴底虚线圆 = 概率为 0</text>
 </svg>
 ${skippedNote}
 </div>
