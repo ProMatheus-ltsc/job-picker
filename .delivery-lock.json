@@ -1,0 +1,21 @@
+{
+  "projectId": "PRJ-2026-022",
+  "stage": "S1",
+  "allowedFiles": [
+    "skills/",
+    "agents/",
+    "templates/",
+    "scripts/",
+    "config/",
+    "schemas/",
+    "tests/",
+    ".claude/",
+    ".claude-plugin/",
+    ".qoder-plugin/",
+    ".qoder/skills/",
+    ".qoder/agents/",
+    "README.md"
+  ],
+  "targetRepo": "C:\\Users\\liyunfei\\IdeaProjects\\job-picker",
+  "baseBranch": "main"
+}
