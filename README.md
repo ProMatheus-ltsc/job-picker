@@ -49,15 +49,53 @@ python3 scripts/fetch.py jobs --list                 # 看有哪些资源
 python3 scripts/fetch.py jobs --get 招考简章 --out ./raw
 ```
 
-### 2. 选岗（资格审查 + 竞争度 + 排序）
+### 2. 选岗（资格审查 + 强度筛查 + 区级薪酬 + 进面概率 + 帕累托）
 
 ```bash
+# 国考模式（缺省）
 npx tsx scripts/pick.ts --jobs ./raw/招考简章.xls \
   --major 法学 --major-class 法学类 \
-  --cities 浙江,陕西,广东 \
+  --cities 广州,深圳 \
   --grassroots 5 --political none --degree 本科 \
   --json out.json
+
+# 省考模式：多 sheet + 来源表驱动 5 年服务期 + 区级代理线（C 级）
+npx tsx scripts/pick.ts --jobs ./raw/广东省考职位表.xlsx \
+  --exam-type sk \
+  --major 法学 --major-class 法学类 \
+  --cities 广州,深圳 --grassroots 5 \
+  --mu 67 --sigma 3.5 --cutoff 65,70 \
+  --json out.json --report-out report.md --scatter-out scatter.html
 ```
+
+| 参数 | 作用 |
+|---|---|
+| `--exam-type gk\|sk` | 国考 / 省考数据链；非法值退出码 2 |
+| `--cities 广州,深圳` | 目标城市（模糊匹配），同时触发**范围外提示** |
+| `--profile assets/profile.md` | 画像文件：强度偏好 / 排除区 / 最低年薪 / 接受服务期 + 学历专业等硬条件 |
+| `--mu` / `--sigma` | 笔试基线与整卷波动（C 级）；不填则不算概率 |
+| `--applicants 文件` | 报名人数（一手 A 级，JSON 或 CSV）；回填后概率才可算 |
+| `--cutoff 65,70` | 进面线区间（省考为区级代理，C 级） |
+| `--keep-heavy` | 保留被判 heavy 的值班/执法/应急岗（默认排除） |
+| `--report-out` | Markdown 报告（五段式 + 口径声明 + 范围外提示） |
+| `--scatter-out` | 单文件 HTML 散点图（纵轴对数） |
+
+> **强度筛查是硬筛**：职位简介 / 招考职位 / 其他要求任一含「值班 / 夜间 / 执法 / 应急 / 三防 / 消防 /
+> 信访 / 一线 / 处突 / 适合男性」即判 heavy 并排除出候选（2026-11-04 实测一次筛掉 433 岗中的 265 个）。
+
+### 2b. 预算反推薪酬（双路径互证）
+
+```bash
+# 有 PDF（需 pdfplumber）
+python3 scripts/budget_salary.py --pdf 某局2026预算.pdf --unit 某局 --out budget.json
+
+# 无 pdfplumber：手工录入科目，零第三方依赖
+python3 scripts/budget_salary.py --json-input subjects.json --out budget.json
+```
+
+方法：`工会经费 ÷ 2%`（路径 A）与 `工资福利支出 − 单位缴费`（路径 B）互证，
+两路差 < 10% 才采信；人数用「内设机构数 × 每科室 3~4 人 + 局领导」反推。
+基本工资占工资福利 > 60% 的单位判为**集中列支**（如区教育局代列全区教师工资），拒绝出个人薪酬。
 
 ### 3. 查历史进面分（官方面试名单）
 
@@ -82,13 +120,28 @@ python3 scripts/interview_scores.py lookup --csv scores.csv --codes 300110101002
 
 ## 四、数据原则（★ 本 skill 的红线）
 
-1. **只取一手来源**：国家公务员局、各招录机关官网、教育部、国家统计局
-2. **禁止第三方汇总**：中公 / 华图 / 粉笔 / 教育宝 / 各类转载 —— 一律不引用
-3. **拿不到就写"无法获取"**，不用估算填充
-4. **允许推算，但必须给公式 + 输入来源**，并标注 `（推算）`
-5. **每条结论附来源**
+### 四级分级（2026-11 改造；原为「一手 / 禁止第三方」二分）
 
-代码层面由 `scripts/_guard.py` **强制**：非官方域名直接抛错，无绕过开关。
+| 级别 | 定义 | 示例 | 允许用途 |
+|---|---|---|---|
+| **A 一手** | 官方原件 | 职位表、面试名单、部门预算、合格线公告 | 可直接进结论与**排序** |
+| **B 二手·可核验** | 有原始附件或可复算式 | 含行测/申论拆解可自洽验算的进面分 | 可用（标 `（二手·可核验）`），可进**排序** |
+| **C 二手·估算** | 无法验证、样本不明 | "广州 74.47"（佛山珠海三项相同 = 单岗样本） | **只读方向，禁止进排序公式** |
+| **D 禁用** | 营销模板、明显矛盾 | "2026 区直 80–84 分"（超过去年全市最高分） | 不引用 |
+
+> **为什么改**：省考官方**从不公布逐岗进面分**（面试名单只有姓名+准考证号），
+> 严守二分铁律 = 省考无法做任何分数分析。改法不是"放开用二手"，
+> 而是**分级 + 用途分离**：放宽只发生在标注层，**守门层不变**。
+
+1. **A 级只认官方**：国家公务员局、各招录机关官网、教育部、财政部/国家统计局、省人事考试局
+2. **D 级一律不引用**：中公 / 华图 / 粉笔的营销页、教育宝、各类转载
+3. **C 级只读方向**，不进任何排序或加总公式；报告里标 `（二手·估算）`
+4. **拿不到就写"无法获取"**，不用估算填充
+5. **允许推算，但必须给公式 + 输入来源 + 数据级别**
+6. **每条结论附来源**
+
+抓取侧仍由 `scripts/_guard.py` **强制**：非官方域名直接抛错，无绕过开关。
+排序侧由 `engine/core/datagrade.ts` 强制：C 级用于 `rank` 用途即抛 `DataGradeError`。
 
 ---
 
@@ -108,15 +161,35 @@ job-picker/
 │   └── raw/{2026-tax,2025-tax}/*.xls     ★ 官方原始附件（两年度 × 3 省 × 2 名单 = 12 份）
 ├── engine/                      ★ 判定引擎（与 Web 版 job-picker 同源）
 │   ├── types/index.ts
-│   ├── core/{eligibility,competition,salary,report,mapping,filter,scoring}.ts
-│   └── io/parseXlsx.ts
-└── scripts/
-    ├── _guard.py                来源守门（域名白名单硬校验）
-    ├── sources.py               官方获取入口清单
-    ├── fetch.py                 抓取器（含反爬分级处理 + Cookie 注入）
-    ├── interview_scores.py      面试名单 → 进面分（discover / fetch / parse / stats / lookup）
-    └── pick.ts                  主流程 CLI
+│   ├── core/{eligibility,intensity,datagrade,probability,pareto,scope,examMode,salary,report,mapping,filter,scoring}.ts
+│   └── io/{parseXlsx,scatter,markdownReport}.ts
+├── scripts/
+│   ├── _guard.py                来源守门（域名白名单硬校验）
+│   ├── sources.py               官方获取入口清单
+│   ├── fetch.py                 抓取器（含反爬分级处理 + Cookie 注入）
+│   ├── interview_scores.py      面试名单 → 进面分（discover / fetch / parse / stats / lookup）
+│   ├── budget_salary.py         部门预算 → 人均应发（双路径互证）
+│   └── pick.ts                  主流程 CLI
+└── tests/                       测试（fixtures 入库，out 不入库）
+    ├── fixtures/                合成样本（不含真实个人信息）
+    ├── ts/probe.ts              引擎探针（供 pytest 断言纯函数）
+    └── test_*.py                100 个用例，入口 python -m pytest -q
 ```
+
+### 2026-11 新增能力一览
+
+| 能力 | 模块 | 解决的问题 |
+|---|---|---|
+| 强度筛查 | `engine/core/intensity.ts` | 值班/执法/应急岗一天筛掉 61%，原先完全没查 |
+| 数据分级 | `engine/core/datagrade.ts` | 省考无官方逐岗线，二分铁律导致无法分析 |
+| 省考模式 | `engine/core/examMode.ts` | 省考分数列不存在；乡镇机关 5 年服务期 |
+| 区级薪酬 | `engine/core/salary.ts` | 荔湾 18–21 vs 南沙 25–27，原先同为「广州 18–25」 |
+| 预算反推 | `scripts/budget_salary.py` | 原公式缺分母（人数不披露），实际不可执行 |
+| 进面概率 | `engine/core/probability.ts` | 原 `(收入+打分)÷报录比` 量纲混杂，无「落榜」概念 |
+| 帕累托前沿 | `engine/core/pareto.ts` | 星级排序看不出"同薪酬但概率低 34 倍" |
+| 范围外提示 | `engine/core/scope.ts` | 只扫广深会漏掉中山两个更优岗 |
+| 报告模板 | `engine/io/markdownReport.ts` | 输出结构每次不同，缺什么看不出来 |
+| 散点图 | `engine/io/scatter.ts` | 纯文本看不出薪酬与概率的权衡形状 |
 
 ### 已归档的一手数据（可直接引用，无需重新抓）
 

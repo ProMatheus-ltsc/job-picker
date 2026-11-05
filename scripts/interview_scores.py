@@ -37,11 +37,23 @@ from collections import Counter
 
 warnings.filterwarnings("ignore")
 
+
+def _force_utf8_stdio() -> None:
+    """把 stdout/stderr 固定为 UTF-8。
+
+    Windows 控制台默认 GBK，本脚本会输出 ⚠/✗ 这类非 GBK 字符，
+    不处理就会在 **管道/重定向** 时抛 UnicodeEncodeError（PRJ-2026-021 踩过同款坑）。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
 # 来源守门（与 fetch.py 同一套硬约束：非官方域名直接抛错）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from _guard import assert_official  # noqa: E402
-except Exception:  # noqa: BLE001
+except ImportError:
 
     def assert_official(url: str) -> None:  # type: ignore[misc]
         pass
@@ -369,7 +381,9 @@ def parse_one(path: str) -> list[dict]:
     for sn in xl.sheet_names:
         try:
             raw = xl.parse(sn, header=None, dtype=str)
-        except Exception:  # noqa: BLE001
+        except (ValueError, KeyError, IndexError, TypeError, OSError):
+            # 单个 sheet 读不了就跳过，不影响其余 sheet（空 sheet、格式异常 sheet、
+            # 引擎异常等都不该毁掉整次解析）
             continue
         if raw.empty:
             continue
@@ -449,7 +463,7 @@ def parse_one(path: str) -> list[dict]:
     return out
 
 
-def parse_dir(d: str, out_csv: str) -> None:
+def parse_dir(d: str, out_csv: str, exam_type: str = "gk") -> None:
     files = [
         os.path.join(d, f)
         for f in sorted(os.listdir(d))
@@ -487,6 +501,8 @@ def parse_dir(d: str, out_csv: str) -> None:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
+    if exam_type == "sk" and not rows:
+        print("[parse] 省考名单不含分数列 → 无逐岗结果。请改用区级/层级代理线（C 级）。")
     print(f"[parse] 共 {len(rows)} 个岗位 → {out_csv}")
 
 
@@ -496,7 +512,8 @@ def load(csv_path: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def stats(csv_path: str, match: str | None, province: str | None = None) -> None:
+def stats(csv_path: str, match: str | None, province: str | None = None,
+          exam_type: str = "gk") -> None:
     import statistics as st
 
     rows = load(csv_path)
@@ -521,6 +538,8 @@ def stats(csv_path: str, match: str | None, province: str | None = None) -> None
                 f"进面人数合计 {sum(hires)} ｜ 单岗中位 {int(st.median(hires))} ｜ "
                 f"≥3 人岗位 {sum(1 for h in hires if h >= 3)}/{len(hires)}"
             )
+    if exam_type == "sk":
+        print("\n⚠ 省考模式：以上分数（若有）为代理值，C 级，只读方向，不进排序公式。")
     print("\n分数段分布：")
     edges = [0, 110, 115, 120, 125, 130, 135, 200]
     for lo, hi in zip(edges, edges[1:]):
@@ -533,7 +552,7 @@ def stats(csv_path: str, match: str | None, province: str | None = None) -> None
             print(f"  {r['进面最低分']:>6}  [{r['职位代码']}] {r['单位及职位'][:56]}")
 
 
-def lookup(csv_path: str, codes: list[str]) -> None:
+def lookup(csv_path: str, codes: list[str], exam_type: str = "gk") -> None:
     # ★ 一个职位代码可能命中多个省份（各省局独立编号）→ 必须按代码聚合、全部列出
     index: dict[str, list[dict]] = {}
     for r in load(csv_path):
@@ -661,8 +680,34 @@ def discover(site: str, year: str | None, kw: str | None) -> None:
 
 
 # ----------------------------- CLI -----------------------------
+EXAM_TYPE_NOTE = {
+    "gk": "国考：面试名单附件含「进入面试最低分数」列（一手 A 级）",
+    "sk": (
+        "省考：官方**不公布逐岗进面分**（名单只有姓名+准考证号）；"
+        "分数相关结论只能来自区级/层级实测代理，标注为 C 级（只读方向，不进排序公式）"
+    ),
+}
+
+
+def print_exam_type_note(exam_type: str) -> None:
+    """在分数类命令开头打印数据链说明，避免把省考与国考的口径混用。"""
+    print(f"[exam-type={exam_type}] {EXAM_TYPE_NOTE[exam_type]}")
+    if exam_type == "sk":
+        print("  ⚠ 省考名单里没有分数列，parse/stats/lookup 对省考数据可能产出空结果——"
+              "这是数据现实，不是脚本故障。")
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="国考面试名单抓取/解析/查询")
+    _force_utf8_stdio()
+    ap = argparse.ArgumentParser(
+        description="面试名单抓取/解析/查询（--exam-type gk|sk 选择数据链）"
+    )
+    ap.add_argument(
+        "--exam-type",
+        choices=("gk", "sk"),
+        default="gk",
+        help="gk=国考（面试名单含最低分数，缺省）；sk=省考（无逐岗分数，输出代理标注）",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p1 = sub.add_parser("fetch", help="从公告页下载面试名单附件")
@@ -692,14 +737,16 @@ def main() -> None:
     p5.add_argument("--kw", default=None, help="标题关键词，如「面试公告」")
 
     a = ap.parse_args()
+    if a.cmd in ("parse", "stats", "lookup"):
+        print_exam_type_note(a.exam_type)
     if a.cmd == "fetch":
         fetch(a.url, a.out)
     elif a.cmd == "parse":
-        parse_dir(a.dir, a.out)
+        parse_dir(a.dir, a.out, a.exam_type)
     elif a.cmd == "stats":
-        stats(a.csv, a.match, a.province)
+        stats(a.csv, a.match, a.province, a.exam_type)
     elif a.cmd == "lookup":
-        lookup(a.csv, a.codes.split(","))
+        lookup(a.csv, a.codes.split(","), a.exam_type)
     elif a.cmd == "discover":
         if a.site == "list":
             print("已收录站点：")
