@@ -200,8 +200,17 @@ const profile: Profile = {
   targetCities: opt('cities')
     ? opt('cities').split(',').map((s) => s.trim()).filter(Boolean)
     : (loaded.profile.targetCities ?? []),
-  major: pickString(opt('major'), loaded.profile.major, '法学'),
-  majorCategory: pickString(opt('major-class'), loaded.profile.majorCategory, '法学类'),
+  // 双学位：--majors 法学,物理学 会拼成「法学|物理学」，由 majorHit 按门类族分别匹配
+  major: pickString(
+    opt('majors', opt('major')),
+    loaded.profile.major,
+    '法学',
+  ).replace(/[,，]/g, '|'),
+  majorCategory: pickString(
+    opt('major-class'),
+    loaded.profile.majorCategory,
+    '法学类',
+  ).replace(/[,，]/g, '|'),
   grassrootsYears: numOpt('grassroots') ?? loaded.profile.grassrootsYears ?? null,
   politicalStatus: (pickString(
     opt('political'),
@@ -214,6 +223,7 @@ const profile: Profile = {
   // 广州户籍（仅省考岗位会用到；国考基本不限户籍）
   hukou: opt('hukou'),
   fresh: has('fresh') ? opt('fresh') === '1' : (loaded.profile.fresh ?? false),
+  gender: (opt('gender') as Profile['gender']) || '',
 } as Profile;
 
 // ── 概率模型输入（P1-2）─────────────────────────────────────────
@@ -442,10 +452,19 @@ async function main(): Promise<void> {
       sourceSheet: r.job.sourceSheet,
       minServiceYears: r.job.minServiceYears,
       hires: r.job.hires,
+      /** 职位类型（广东省考决定申论考哪张卷：综合管理类 / 行政执法类 / 公安执法勤务） */
+      institution: r.job.institution,
+      // 薪酬（推算）：见 engine/core/salary.ts 的口径说明
       salary: {
+        city: r.salary.city,
         payMin: r.salary.payMin,
         payMax: r.salary.payMax,
         mid: r.salaryMid,
+        cashMin: r.salary.cashMin,
+        cashMax: r.salary.cashMax,
+        fundMin: r.salary.fundMin,
+        fundMax: r.salary.fundMax,
+        housePrice: r.salary.housePrice,
         district: r.salary.district,
         precise: r.salary.precise,
         // 级别随档位走（省直 A / 区级市级 B / 兜底 C），下游据此复现报告标注（m-02）
@@ -517,25 +536,49 @@ async function main(): Promise<void> {
 
   // ── 文本报告 ──
   console.log(
-    `考试类型：${EXAM_TYPE_LABEL[examType]}（${examType}）｜专业口径：${profile.major}/${profile.majorCategory}` +
+    `考试类型：${EXAM_TYPE_LABEL[examType]}（${examType}）｜专业口径：${profile.major.replace(/\|/g, ' 或 ')}/${profile.majorCategory.replace(/\|/g, ' 或 ')}` +
       ` ｜ 目标：${profile.targetCities.join(' + ') || '不限'}`,
+  );
+  console.log(
+    `画像：${profile.degree} ｜ 基层 ${profile.grassrootsYears ?? '未填'} 年 ｜ ${profile.politicalStatus === 'party' ? '党员' : '非党员'}` +
+      ` ｜ ${profile.hasLegalCert ? '有' : '无法考证书'} ｜ ${profile.gender || '性别未填'} ｜ ${profile.fresh ? '应届' : '非应届'}`,
   );
   console.log(`纳入判定 ${rep.total} ｜ ✅ ${rep.pass} ｜ ❌ ${rep.fail} ｜ ⚠ ${rep.warn}`);
   if (rep.excludedByIntensity.length) {
     console.log(`强度筛查：排除 ${rep.excludedByIntensity.length} 个 heavy 岗位（值班/执法/应急）`);
   }
   console.log('');
-  console.log('推荐  地区            招  竞争度  指数   买房年  强度    服务期  门槛');
-  console.log('-'.repeat(92));
-  for (const r of rep.ranked.slice(0, 20)) {
+  // 表格必须带单位名：只显示「广州」时几十个候选长得一模一样，无法据此选岗
+  console.log('推荐  地区            招  竞争度  指数   买房年  强度    服务期  单位 · 职位');
+  console.log('-'.repeat(124));
+  for (const r of rep.ranked.slice(0, 25)) {
     const stars = '★'.repeat(Math.floor(r.star)) + (r.star % 1 >= 0.5 ? '☆' : '');
     const service = r.job.minServiceYears == null ? '—' : `${r.job.minServiceYears}年`;
+    const name = `${r.job.unit} ${r.job.title}`.slice(0, 34);
     console.log(
       `${stars.padEnd(5, '　')} ${salaryLabel(r.salary).slice(0, 9).padEnd(9, '　')} ` +
         `${String(r.job.hires ?? '?').padStart(2)}  ${r.comp.level.padEnd(4, '　')} ${String(r.comp.score).padStart(4)}  ` +
         `${String(r.yearsForHousing + '年').padStart(6)}  ${r.intensity.level.padEnd(6, '　')} ${service.padStart(5)}  ` +
-        `${r.gates.length ? r.gates.join('+') : '无'}`,
+        `${name}${r.gates.length ? ` [${r.gates.join('+')}]` : ''}`,
+
     );
+  }
+  if (rep.ranked.length > 25) console.log(`… 另有 ${rep.ranked.length - 25} 个候选，见 --json 输出`);
+  const noGate = rep.ranked.filter((r) => !r.gates.length).length;
+  console.log(`\n候选合计 ${rep.ranked.length} 个 ｜ 无额外门槛 ${noGate} 个 ｜ 有门槛 ${rep.ranked.length - noGate} 个`);
+  console.log(`淘汰原因：${rep.failReasons.map((f) => `${f.label} ${f.count}`).join(' ｜ ')}`);
+
+  // 职位类型分布：广东省考里它决定申论考哪张卷，比"哪个单位"更影响备考成本
+  const instCount = new Map<string, number>();
+  rep.ranked.forEach((r) => {
+    const k = String(r.job.institution ?? '').trim() || '（未标注）';
+    instCount.set(k, (instCount.get(k) ?? 0) + 1);
+  });
+  if (instCount.size > 1) {
+    console.log('\n职位类型（决定申论考哪张卷）：');
+    [...instCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([k, n]) => console.log(`  ${k.padEnd(14, '　')} ${n} 个`));
   }
 
   // 抽样自检：前 3 个候选的拆解（便于人工核对）
@@ -543,7 +586,7 @@ async function main(): Promise<void> {
   for (const r of rep.ranked.slice(0, 3)) {
     const c = estimateCompetition(r.job);
     console.log(`  [${r.job.code}] ${r.job.unit}${r.job.title ? `·${r.job.title}` : ''}`);
-    console.log(`    竞争 ${c.score}(${c.level}) ｜ 报录比参考 ≈${c.ratioRef}:1`);
+    console.log(`    竞争 ${c.score}(${c.level}) ｜ 报录比参考 ≈${c.ratioRef}:1 ｜ 进面分参考 ${c.cutoffRef}`);
     console.log(
       `    薪酬 ${r.salary.payMin}-${r.salary.payMax}万（${salaryLabel(r.salary)}）｜ 房价 ${r.salary.housePrice}/㎡ ｜ 买房 ${yearsForHousing(r.salary)}年`,
     );
@@ -558,7 +601,7 @@ async function main(): Promise<void> {
     } else {
       console.log('    进面概率：未计算（缺 μ/σ/报名人数）');
     }
-    console.log(`    额外门槛：${hardGates(r.job).join('、') || '无'}`);
+    console.log(`    额外门槛：${hardGates(r.job).filter((g) => g !== '性别限制').join('、') || '无'}`);
   }
 
   if (rep.ranked.length) {

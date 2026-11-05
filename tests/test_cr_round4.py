@@ -164,7 +164,8 @@ def test_default_tier_is_grade_c() -> None:
     require_tsx()
     # 「某某市某局」不匹配县域/新一线等正则，会落到最后的 DEFAULT_TIER
     result = probe("salary", {"region": "某某市某局"})
-    assert result["city"] == "普通地级市（估算）", result
+    # 合并对方改动后档名改为「未收录城市（估算）」（更准确：不是"普通地级市"，而是没收录）
+    assert result["city"] == "未收录城市（估算）", result
     assert result["grade"] == "C", result
 
 

@@ -104,32 +104,67 @@ function isFreshOnly(text: string): boolean {
 }
 
 /**
+ * 学科门类族：同一学科在不同目录下有两套编码，必须归一。
+ *
+ * - 教育部《本科专业目录》：门类 03=法学（含 B0301 法学类）、07=理学（含 B0702 物理学类）
+ * - 广东省考职位表却用**研究生目录**编码：`06法律类`、`07理学类`（06=法学门类、07=理学门类）
+ * - 也有岗位直接写门类名：`法学(B03)`、`理学(B07)`
+ *
+ * 不归一的后果：广东省考 111 行「06法律类」岗位全部被判专业不符——
+ * 而按门类招的岗位恰恰是专业限制最宽、竞争最小的一批。
+ */
+const MAJOR_FAMILIES: string[][] = [
+  ['法律类', '法学', '法学类', '法学门类'],
+  ['理学', '理学类', '物理学', '物理学类'],
+];
+
+const familyOf = (name: string): number => MAJOR_FAMILIES.findIndex((f) => f.includes(name));
+
+/** 剥掉专业名前面的学科编码：`06法律类` / `B0301` / `0301K` / `0702物理学` / `B070201` */
+function stripMajorCode(s: string): string {
+  return s
+    .replace(/^[A-Za-z]\d{2,6}[A-Za-z]?/, '')
+    .replace(/^\d{1,4}[A-Za-z]?\d{0,3}/, '')
+    .trim();
+}
+
+/**
  * 专业匹配：**先按分隔符切段、剥离专业代码，再逐段精确比对**。
  *
  * 为什么不能整串 includes：岗位专业列常是超长列表（「数学类、物理学类、化学类…」），
  * 整串包含匹配会把「**大气物理学**与大气环境」（大气科学类）误判为命中「物理学」，
  * 也会让「计算机类」命中「计算」之类的子串。
  *
- * 命中规则：某一段 与 我的专业/大类 **相等**，或该段 = 我的大类（如 seg「物理学类」 vs mine「物理学」）。
+ * 命中规则（任一成立即可）：
+ *   1. 某一段 与 我的专业/大类 **相等**（该段加「类」后相等也算）
+ *   2. 某一段 与 我的专业 **同属一个学科门类族**（见 MAJOR_FAMILIES）
+ *
+ * `mine` 支持用 `|` 分隔多专业（双学位场景：`法学|物理学`）。
  */
 function majorHit(reqRaw: string, mine: string[]): boolean {
   const segs = reqRaw
     .replace(/[（(][^）)]*[）)]/g, '')
     .split(/[,，、;；/／]/)
     .map((s) =>
-      s
-        .replace(/^\d{4}[A-Za-z]?/, '') // 去掉开头的专业代码（如「0702物理学」）
-        .replace(/^[^：:\s]{1,12}[：:]/, '') // 去掉「大学本科：」「研究生：」这类层别前缀
-        .replace(/\s/g, '')
-        .trim(),
+      stripMajorCode(
+        s
+          .replace(/^[^：:\s]{1,12}[：:]/, '') // 去掉「大学本科：」「研究生：」这类层别前缀
+          .replace(/\s/g, ''),
+      ),
     )
     .filter(Boolean);
   if (!segs.length) return true; // 无法分段（罕见）→ 不据此淘汰，避免误杀
-  return mine.some((m) => {
-    const mm = String(m ?? '').replace(/\s/g, '');
-    if (!mm) return false;
+  const mineClean = mine
+    .flatMap((m) => String(m ?? '').split(/[|｜]/))
+    .map((m) => stripMajorCode(m.replace(/\s/g, '')))
+    .filter(Boolean);
+  return mineClean.some((mm) => {
     const cls = mm.endsWith('类') ? mm : `${mm}类`;
-    return segs.some((seg) => seg === mm || seg === cls || (seg.endsWith('类') && mm.endsWith('类') && seg === mm));
+    const myFam = familyOf(mm);
+    return segs.some((seg) => {
+      if (seg === mm || seg === cls) return true;
+      return myFam >= 0 && familyOf(seg) === myFam;
+    });
   });
 }
 
@@ -228,14 +263,31 @@ export function judgeJob(job: Job, profile: Profile): Eligibility {
     reasons.push({ level: 'fail', field: '证书', text: '要求法律职业资格证书' });
   }
 
+  // ⑤b 性别（省考高频：广东在「其他要求」里直接写「男性」/「女性」，国考少见）
+  //     实测：广州+深圳初筛 96 个候选里有 8 个是「限女性」，不判定就会推给男性考生
+  if (ready && profile.gender) {
+    const t = jobText(job).replace(/\s/g, '');
+    if (!/不限性别|男女不限|性别不限/.test(t)) {
+      const male = /限男性|仅限男性|男性/.test(t);
+      const female = /限女性|仅限女性|女性/.test(t);
+      if (male && !female && profile.gender === '女') {
+        reasons.push({ level: 'fail', field: '性别', text: '仅限男性' });
+      } else if (female && !male && profile.gender === '男') {
+        reasons.push({ level: 'fail', field: '性别', text: '仅限女性' });
+      }
+    }
+  }
+
   // ⑥ 应届身份
   //    广东有独立「是否限应届毕业生报考」列；浙江写进「现有身份要求」；
   //    国考**没有独立列**，只能从备注/职位简介兜底（「2027届高校毕业生」等写法）
   if (ready && !profile.fresh) {
     const fc = String(job.freshRequired ?? '').trim();
     const identity = `${job.grassrootsYears ?? ''} ${jobText(job)}`;
-    if (/^是$/.test(fc)) {
-      reasons.push({ level: 'fail', field: '身份', text: '面向应届毕业生' });
+    // ⚠️ 广东省考该列取值是「应届毕业生 / 2027届高校毕业生 / 否」，不是「是/否」。
+    //    只判 /^是$/ 会把 22 个限应届岗位放进候选（实测：广州+深圳 91 个候选里 22 个限应届）。
+    if (fc && !/^否$/.test(fc) && (/是|应届|\d{4}届/.test(fc) || isFreshOnly(fc))) {
+      reasons.push({ level: 'fail', field: '身份', text: `面向应届毕业生（${fc}）` });
     } else if (!/^否$/.test(fc) && isFreshOnly(identity)) {
       reasons.push({ level: 'fail', field: '身份', text: '面向应届毕业生（限 XX 届高校毕业生）' });
     }
