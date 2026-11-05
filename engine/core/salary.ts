@@ -75,9 +75,9 @@ const VERIFIED: Array<{ key: string; data: SalaryTier }> = [
     },
   },
   { key: '东莞', data: { payMin: 17, payMax: 22, cashMin: 8000, cashMax: 11000, fundMin: 3000, fundMax: 4000, housePrice: 19200, basis: '珠三角调研汇总（2026）' } },
-  { key: '佛山', data: { payMin: 17, payMax: 22, cashMin: 8000, cashMax: 11000, fundMin: 3000, fundMax: 4000, housePrice: 12500, basis: '珠三角调研汇总（2026）' } },
+  { key: '佛山', data: { payMin: 17, payMax: 20, cashMin: 8000, cashMax: 11000, fundMin: 3000, fundMax: 4000, housePrice: 12500, basis: '珠三角调研汇总（2026，B 级：部门预算档 19–23 + 机构样本 16.8–20 交叉取 17–20）' } },
   { key: '珠海', data: { payMin: 17, payMax: 22, cashMin: 8000, cashMax: 11000, fundMin: 3000, fundMax: 4000, housePrice: 20200, basis: '珠三角调研汇总（2026）' } },
-  { key: '中山', data: { payMin: 15, payMax: 18, cashMin: 7000, cashMax: 9500, fundMin: 2500, fundMax: 3500, housePrice: 8500, basis: '广东省内第二梯队（2026）' } },
+  { key: '中山', data: { payMin: 19, payMax: 22, cashMin: 8000, cashMax: 10500, fundMin: 3000, fundMax: 3800, housePrice: 8500, basis: '珠三角二梯队（2026，B 级：部门预算档 20–24 + 机构样本 17–22 交叉取 19–22）' } },
   { key: '惠州', data: { payMin: 15, payMax: 18, cashMin: 7000, cashMax: 9500, fundMin: 2500, fundMax: 3500, housePrice: 8300, basis: '广东省内第二梯队（2026）' } },
   { key: '江门', data: { payMin: 15, payMax: 18, cashMin: 7000, cashMax: 9500, fundMin: 2500, fundMax: 3500, housePrice: 6300, basis: '广东省内第二梯队（2026）' } },
   { key: '汕头', data: { payMin: 15, payMax: 18, cashMin: 7000, cashMax: 9500, fundMin: 2500, fundMax: 3500, housePrice: 10500, basis: '广东省内第二梯队（2026）' } },
@@ -356,6 +356,31 @@ export function estimateSalary(region: string): CitySalary & { precise: boolean 
   };
 }
 
+/**
+ * 按**岗位**匹配薪酬档：优先用「招考单位」判定区级/省直，单位名判不出来才退回考区。
+ *
+ * 为什么不能只用考区（2026-11-05 实测缺陷）：
+ * 广东省考职位表的「考区」列只有 21 个地市名（「广州」「深圳」），
+ * **区名与省直身份全在「招考单位」里**（「广州市南沙区发展和改革局」「广东省退役军人事务厅」）。
+ * 只用考区 → 南沙被算成广州整市档 18–25 万、省直三个岗也落到广州整市档，
+ * 区际 6.5–12 万的差距与省直 A 级预算档**全部失效**，而这正是选岗的主轴之一。
+ *
+ * 为什么不能简单拼成「单位 + 考区」：`isProvinceLevel` 见到「广州」里的「州」会判非省直，
+ * 省直岗会被打回市档。所以先单独用单位名判定，判不出来（如考区名才是唯一地点线索）再拼。
+ */
+export function estimateSalaryForJob(job: { unit?: string | null; region?: string | null }): CitySalary & { precise: boolean } {
+  const unit = String(job.unit ?? '').trim();
+  const region = String(job.region ?? '').trim();
+
+  if (unit) {
+    const byUnit = estimateSalary(unit);
+    // precise = 命中了区级档或省直预算档（比"整市"更细），这才是我们要的信息
+    if (byUnit.precise) return byUnit;
+  }
+  if (unit && region) return estimateSalary(`${unit} ${region}`);
+  return estimateSalary(region || unit);
+}
+
 /** 展示名：有区级时带上区（「广州·南沙」），否则只有市/档位名 */
 export function salaryLabel(s: Pick<CitySalary, 'city' | 'district'>): string {
   return s.district ? `${s.city}·${s.district}` : s.city;
@@ -365,7 +390,7 @@ export function salaryLabel(s: Pick<CitySalary, 'city' | 'district'>): string {
 export function salaryTable(jobs: Job[]): Array<CitySalary & { precise: boolean; count: number; yearsForHousing: number }> {
   const map = new Map<string, { s: CitySalary & { precise: boolean }; count: number }>();
   for (const j of jobs) {
-    const est = estimateSalary(j.region);
+    const est = estimateSalaryForJob(j);
     const label = salaryLabel(est);
     const hit = map.get(label);
     if (hit) hit.count += 1;

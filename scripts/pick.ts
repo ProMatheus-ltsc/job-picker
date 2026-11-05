@@ -23,7 +23,7 @@ import {
   type SelectionReport,
 } from '../engine/core/report';
 import { estimateCompetition, hardGates, recommendStar } from '../engine/core/competition';
-import { estimateSalary, salaryLabel, yearsForHousing } from '../engine/core/salary';
+import { estimateSalary, estimateSalaryForJob, salaryLabel, yearsForHousing } from '../engine/core/salary';
 import { CATEGORY_LABEL, intensitySummary, scanIntensity } from '../engine/core/intensity';
 import { estimateProbability, formatProbability } from '../engine/core/probability';
 import { nonDominated, paretoSummary } from '../engine/core/pareto';
@@ -312,7 +312,10 @@ function filterByPreference(report: SelectionReport): SelectionReport {
       }
     }
     // ② 排除区
-    const regionText = `${row.job.region} ${salaryLabel(row.salary)}`;
+    // ★ 必须扫「招考单位」名，不能只看 region + 薪酬展示名：
+    //   广东省考的 region 只有地市名（「广州」），区名写在单位名里（「广州市越秀区…」），
+    //   而薪酬档只覆盖部分区（未收录的区退化成都市档）→ 只按前两者匹配会漏排。
+    const regionText = `${row.job.unit} ${row.job.region} ${salaryLabel(row.salary)}`;
     const excludedDistrict = extras.excludeDistricts.find((d) => regionText.includes(d));
     if (excludedDistrict) reasons.push(`画像排除区：${excludedDistrict}`);
     // ③ 最低年薪（年全包口径）
@@ -724,7 +727,7 @@ async function main(): Promise<void> {
   if (scatterOut) {
     const html = renderScatterHtml(
       rep.ranked.map((r) => {
-        const s = estimateSalary(r.job.region);
+        const s = estimateSalaryForJob(r.job);
         return {
           label: `${r.job.unit}${r.job.title ? `·${r.job.title}` : ''}`,
           city: salaryLabel(s),

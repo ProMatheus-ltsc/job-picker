@@ -10,7 +10,7 @@
  * 只做转发与序列化，不含任何业务判定——判定逻辑一律在 engine/ 里，避免测试与实现各写一份。
  */
 import { readFileSync } from 'node:fs';
-import { estimateSalary, salaryLabel, salaryMidpoint } from '../../engine/core/salary';
+import { estimateSalary, estimateSalaryForJob, salaryLabel, salaryMidpoint } from '../../engine/core/salary';
 import { scanIntensity, intensitySummary } from '../../engine/core/intensity';
 import { estimateProbability, formatProbability } from '../../engine/core/probability';
 import { nonDominated, paretoSummary } from '../../engine/core/pareto';
@@ -46,7 +46,11 @@ try {
   switch (name) {
     case 'salary': {
       const region = String(input.region ?? '');
-      const est = estimateSalary(region);
+      // job：按岗位（单位名 + 考区）取档，广东省考的区名与省直身份写在**单位名**里
+      const jobInput = input.job as { unit?: string; region?: string } | undefined;
+      const est = jobInput
+        ? estimateSalaryForJob(jobInput)
+        : estimateSalary(region);
       const table = (input.regions as string[] | undefined)?.map((r) => {
         const s = estimateSalary(r);
         return {

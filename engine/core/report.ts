@@ -19,7 +19,13 @@ import type { Job, Profile } from '../types';
 import { inTargetCity } from './filter';
 import { judgeJob, scanRisks, type EligibilityStatus } from './eligibility';
 import { estimateCompetition, hardGates, recommendStar, type CompetitionResult } from './competition';
-import { estimateSalary, salaryLabel, salaryMidpoint, yearsForHousing, type CitySalary } from './salary';
+import {
+  estimateSalaryForJob,
+  salaryLabel,
+  salaryMidpoint,
+  yearsForHousing,
+  type CitySalary,
+} from './salary';
 import { scanIntensity, type IntensityResult } from './intensity';
 import { estimateProbability, type ProbabilityInput, type ProbabilityResult } from './probability';
 import { nonDominated, type ParetoResult } from './pareto';
@@ -243,7 +249,7 @@ export function buildSelectionReport(
   const ranked: RankedCandidate[] = candidates
     .map((job) => {
       const comp = estimateCompetition(job);
-      const salary = estimateSalary(job.region);
+      const salary = estimateSalaryForJob(job);
       const years = yearsForHousing(salary);
       const gates = hardGates(job).filter((g) => g !== '性别限制');
       const probability = estimateProbability(probabilityInputFor(job, options));
@@ -302,5 +308,5 @@ export function candidateLabel(job: Job): string {
 
 /** 报告里某条候选的地区展示（带区） */
 export function candidateRegion(job: Job): string {
-  return salaryLabel(estimateSalary(job.region));
+  return salaryLabel(estimateSalaryForJob(job));
 }
