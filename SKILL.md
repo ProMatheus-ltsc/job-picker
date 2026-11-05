@@ -550,6 +550,8 @@ python3 scripts/interview_scores.py parse --dir ~/Downloads --out scores.csv
 | `references/interview-scores-2025-tax-yue-zhe-shan.md` / `.csv` | **2025 年度**同三省进面分（1229 岗） |
 | `references/tax-scores-yoy-2025-2026.md` | **跨年对比**：同岗位配对、+3.6 分/年、70% 上涨 |
 | `references/raw/2026-tax/*.xls`、`references/raw/2025-tax/*.xls` | **官方原始附件各 6 份**（两年度 × 三省 × 主名单+递补），可直接打开核对 |
+| `references/raw/2027-zj/浙江_2027_考录计划一览表.xlsx` | **浙江省考 2027 职位表**（3 sheet / 3298 岗 / 4223 人），⚠️ 第三方镜像，报名前须回官方复核 |
+| `references/zhejiang-2027-screening.md` / `references/zhejiang-2027-final.csv` | **浙江省考 2027 选岗筛查**：筛选漏斗、21 岗全表（含职位代码/咨询电话）、浙粤撞考结论 |
 | `references/data-sources.md` | 一手数据源总表（含实测可达性与降级策略） |
 | `references/pitfalls.md` | 踩坑记录（33 条） |
 
