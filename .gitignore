@@ -1,4 +1,4 @@
-# 依赖
+﻿# 依赖
 node_modules/
 __pycache__/
 *.pyc
@@ -18,3 +18,5 @@ Thumbs.db
 
 # 测试产物（fixtures 入库，输出不入库）
 tests/out/
+# git-ops 操作日志（本地审计，不入库）
+/logs/
