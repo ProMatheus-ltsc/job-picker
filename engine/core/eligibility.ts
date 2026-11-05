@@ -144,7 +144,10 @@ function stripMajorCode(s: string): string {
 function majorHit(reqRaw: string, mine: string[]): boolean {
   const segs = reqRaw
     .replace(/[（(][^）)]*[）)]/g, '')
-    .split(/[,，、;；/／]/)
+    // ★ 空格也是分隔符：广东把专业拆成「研究生 / 本科 / 大专」三列，
+    //   rowText 以**空格**拼接，不分段就会得到「…(A030112) 法学(B030101)」这样一个整段，
+    //   等于要求岗位专业名里同时含两个专业 → 省直三岗、越秀仲裁院等被全部误判为专业不符。
+    .split(/[,，、;；/／\s]+/)
     .map((s) =>
       stripMajorCode(
         s
